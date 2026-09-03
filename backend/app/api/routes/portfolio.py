@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import get_current_user
@@ -119,7 +119,7 @@ async def portfolio_overview(
 ) -> PortfolioOverview:
     # Open positions
     positions_result = await session.execute(
-        select(Position).where(Position.user_id == current_user.id, Position.is_open == True)
+        select(Position).where(Position.user_id == current_user.id, Position.is_open == True)  # noqa: E712 - SQLAlchemy needs ==; `is True` has no SQL equivalent
     )
     open_positions = positions_result.scalars().all()
 
@@ -239,7 +239,6 @@ async def portfolio_performance(
     from collections import defaultdict
 
     daily: dict[str, float] = defaultdict(float)
-    running = 0.0
     for t in trades:
         day = t.created_at.date().isoformat()
         delta = float(t.net_value) if t.transaction_type == "SELL" else -float(t.net_value)

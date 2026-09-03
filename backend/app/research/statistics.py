@@ -42,7 +42,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from itertools import combinations
-from typing import Literal, Optional, Sequence
+from typing import Optional, Sequence
 
 import numpy as np
 from scipy import stats

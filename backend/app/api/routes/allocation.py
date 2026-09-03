@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from typing import Optional
 
 import structlog
@@ -9,8 +9,6 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
-from app.core.exceptions import KillSwitchActiveError, RiskLimitExceededError
 from app.core.security import get_current_user
 from app.database.models import CapitalAllocation, User, UserSettings
 from app.database.session import get_async_session

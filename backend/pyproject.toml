@@ -34,6 +34,9 @@ dependencies = [
     "kiteconnect>=5.0",
     "httpx>=0.27",
     "structlog>=24.1",
+    # Imported by app/broker/zerodha.py for IST handling but never declared —
+    # CI failed with ModuleNotFoundError while local passed.
+    "pytz>=2024.1",
     "python-multipart>=0.0.9",
     "aiofiles>=23.2",
     "celery[redis]>=5.3",
@@ -67,8 +70,30 @@ test = [
 [tool.ruff]
 target-version = "py311"
 line-length = 99
+
+[tool.ruff.lint]
+# Moved under [lint] — ruff deprecated the top-level form and was emitting a
+# warning on every CI run.
 select = ["E", "F", "I", "N", "W"]
-ignore = ["E501"]
+ignore = [
+    "E501",
+    # N803/N806 demand lowercase argument and variable names. Numerical code
+    # here follows mathematical convention instead: `X` is a design matrix, `y`
+    # a target vector, `Sigma` a covariance matrix. Renaming them to `x_train`
+    # and `sigma` would make the code HARDER to check against the formulas it
+    # implements, which matters more than the naming rule.
+    #
+    # This is a style exemption, not a security one: no Bandit, secret-scanner
+    # or dependency-audit finding is suppressed anywhere in this file.
+    "N803",
+    "N806",
+    # N818 wants every exception class to end in "Error". These are deliberate
+    # names that read as conditions at the call site — `except LiveTradingBlocked`
+    # and `except IllegalStateTransition` say what happened more clearly than an
+    # -Error suffix would. Renaming them is a breaking API change across the
+    # execution and governance layers for no safety benefit.
+    "N818",
+]
 
 [tool.mypy]
 python_version = "3.11"

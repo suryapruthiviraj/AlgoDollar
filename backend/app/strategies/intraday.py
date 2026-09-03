@@ -21,8 +21,11 @@ import numpy as np
 import pandas as pd
 
 from app.strategies.base import (
-    INTRADAY_ROUND_TRIP_COST, MAX_GROSS_EXPOSURE,
-    BaseStrategy, Signal, SignalDirection,
+    INTRADAY_ROUND_TRIP_COST,
+    MAX_GROSS_EXPOSURE,
+    BaseStrategy,
+    Signal,
+    SignalDirection,
 )
 
 logger = logging.getLogger(__name__)

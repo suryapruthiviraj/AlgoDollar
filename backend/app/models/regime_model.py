@@ -101,7 +101,7 @@ class VolatilityRegimeModel:
 
         regimes = pd.Series(index=prices.index, dtype=object)
         for i in range(len(prices)):
-            t = prices.index[i]
+            prices.index[i]
             history = rv_shifted.iloc[max(0, i - self.percentile_window) : i + 1]
             history = history.dropna()
             current_rv = realized_vol.iloc[i]

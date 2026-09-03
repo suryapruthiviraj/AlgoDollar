@@ -273,7 +273,7 @@ async def _run_startup_recovery(
         return False, msg
 
     try:
-        report = await recovery.recover(broker)
+        await recovery.recover(broker)
     except Exception as exc:
         msg = f"startup reconciliation raised: {exc!r}"
         logger.error("startup_recovery_blocked: %s", msg)

@@ -18,7 +18,6 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import joblib
-import pandas as pd
 
 from app.models.ml_models import AlphaModelBase  # type: ignore
 

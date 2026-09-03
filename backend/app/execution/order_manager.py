@@ -40,13 +40,13 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from ..core.exceptions import AmbiguousOrderStateError
 from ..broker.base import (
     BrokerInterface,
     OrderType,
     Product,
     TransactionType,
 )
+from ..core.exceptions import AmbiguousOrderStateError
 from .lifecycle import (
     LEGAL_TRANSITIONS,
     OrderBlockedError,

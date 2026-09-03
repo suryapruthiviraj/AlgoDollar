@@ -137,65 +137,6 @@ def _run_backtest_sync(req: BacktestRequest) -> BacktestResult:
     )
 
 
-def _unreachable_reference_implementation(req: "BacktestRequest", rng, days: int):
-    """
-    Retained only to document the response schema for whoever wires the real
-    engine to this endpoint. Never called.
-    """
-    annual_ret = rng.uniform(0.08, 0.22)
-    years = days / 365.25
-    total_ret = (1 + annual_ret) ** years - 1
-    final_value = req.initial_capital * (1 + total_ret)
-    sharpe = rng.uniform(0.8, 2.2)
-    sortino = sharpe * rng.uniform(1.1, 1.5)
-    max_dd = rng.uniform(0.05, 0.18)
-    calmar = annual_ret / max_dd if max_dd else 0
-    win_rate = rng.uniform(0.45, 0.65)
-    n_trades = int(days / rng.uniform(3, 10))
-    costs = final_value * 0.002
-
-    # Simplified equity curve (monthly snapshots)
-    curve: list[dict] = []
-    current = req.initial_capital
-    cursor = req.start_date
-    while cursor <= req.end_date:
-        monthly_ret = rng.uniform(-0.04, 0.06)
-        current *= 1 + monthly_ret
-        curve.append({"date": cursor.isoformat(), "value": round(current, 2)})
-        # advance ~1 month
-        m = cursor.month + 1 if cursor.month < 12 else 1
-        y = cursor.year if cursor.month < 12 else cursor.year + 1
-        cursor = cursor.replace(year=y, month=m)
-
-    bt_id = str(uuid.uuid4())
-    result = BacktestResult(
-        backtest_id=bt_id,
-        strategy=req.strategy,
-        start_date=req.start_date,
-        end_date=req.end_date,
-        initial_capital=req.initial_capital,
-        final_value=round(final_value, 2),
-        total_return_pct=round(total_ret * 100, 2),
-        annualized_return_pct=round(annual_ret * 100, 2),
-        sharpe_ratio=round(sharpe, 3),
-        sortino_ratio=round(sortino, 3),
-        max_drawdown_pct=round(max_dd * 100, 2),
-        calmar_ratio=round(calmar, 3),
-        win_rate=round(win_rate * 100, 2),
-        total_trades=n_trades,
-        avg_trade_duration_days=round(days / n_trades, 1) if n_trades else 0,
-        profit_factor=round(rng.uniform(1.1, 2.5), 2),
-        total_costs=round(costs, 2),
-        parameters=req.parameters,
-        equity_curve=curve,
-        status="completed",
-        created_at=datetime.now(timezone.utc),
-    )
-    _backtest_store[bt_id] = result
-    return result
-
-
-# ── Routes ─────────────────────────────────────────────────────────────────────
 
 @router.post("/backtest", response_model=BacktestResult)
 async def run_backtest(
@@ -270,7 +211,7 @@ async def list_models(
     if strategy:
         stmt = stmt.where(ModelVersion.strategy == strategy)
     if active_only:
-        stmt = stmt.where(ModelVersion.is_active == True)
+        stmt = stmt.where(ModelVersion.is_active == True)  # noqa: E712 - SQLAlchemy needs ==; `is True` has no SQL equivalent
 
     result = await session.execute(stmt)
     models = result.scalars().all()

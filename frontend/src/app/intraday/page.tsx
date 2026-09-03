@@ -207,7 +207,7 @@ export default function IntradayPage() {
         {/* Today's Trades */}
         <section className="bg-surface border border-border rounded-lg">
           <div className="px-4 py-3 border-b border-border">
-            <h3 className="text-sm font-semibold text-text-primary">Today's Trades ({todayTrades.length})</h3>
+            <h3 className="text-sm font-semibold text-text-primary">Today&apos;s Trades ({todayTrades.length})</h3>
           </div>
 
           {todayTrades.length === 0 ? (

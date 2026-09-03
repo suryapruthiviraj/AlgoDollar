@@ -13,10 +13,8 @@ Principles
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, List, Optional
-
-import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -140,7 +138,7 @@ class Rebalancer:
             return False
 
         # Estimate cost as fraction of total capital to be traded
-        turnover_pct = total_deviation / 2.0  # each deviation is double-counted
+        total_deviation / 2.0  # each deviation is double-counted
         estimated_cost_pct = self._estimate_cost_pct(prices)
         total_cost_pct = estimated_cost_pct * _COST_BUFFER_MULTIPLIER
 
@@ -206,7 +204,7 @@ class Rebalancer:
         normalized_target = {k: v / w_sum for k, v in target_weights.items()}
 
         all_symbols = set(current_positions) | set(normalized_target)
-        total_current = sum(
+        sum(
             float(pos.get("value", 0)) for pos in current_positions.values()
         )
 

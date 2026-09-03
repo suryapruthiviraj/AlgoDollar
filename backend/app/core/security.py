@@ -58,6 +58,7 @@ async def get_current_user(
     session: AsyncSession = Depends(get_async_session),
 ):
     from sqlalchemy import select
+
     from app.database.models import User
 
     payload = decode_access_token(token)

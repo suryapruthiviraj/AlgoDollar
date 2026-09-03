@@ -45,8 +45,11 @@ import numpy as np
 import pandas as pd
 
 from app.strategies.base import (
-    DELIVERY_ROUND_TRIP_COST, MAX_GROSS_EXPOSURE,
-    BaseStrategy, Signal, SignalDirection,
+    DELIVERY_ROUND_TRIP_COST,
+    MAX_GROSS_EXPOSURE,
+    BaseStrategy,
+    Signal,
+    SignalDirection,
 )
 
 logger = logging.getLogger(__name__)

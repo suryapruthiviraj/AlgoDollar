@@ -90,7 +90,8 @@ import json
 import logging
 import math
 import re
-from dataclasses import dataclass, field, fields as _dataclass_fields, replace
+from dataclasses import dataclass, field, replace
+from dataclasses import fields as _dataclass_fields
 from datetime import date, datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path

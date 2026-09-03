@@ -46,9 +46,9 @@ from __future__ import annotations
 
 import inspect
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Optional, Sequence
+from typing import Any, Callable, Optional
 
 from app.broker.base import BrokerInterface
 from app.core.exceptions import (

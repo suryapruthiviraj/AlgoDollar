@@ -1,13 +1,13 @@
 from fastapi import APIRouter
 
-from app.api.routes.health import router as health_router
-from app.api.routes.portfolio import router as portfolio_router
 from app.api.routes.allocation import router as allocation_router
-from app.api.routes.trades import router as trades_router
-from app.api.routes.strategies import router as strategies_router
+from app.api.routes.health import router as health_router
 from app.api.routes.markets import router as markets_router
-from app.api.routes.settings import router as settings_router
+from app.api.routes.portfolio import router as portfolio_router
 from app.api.routes.research import router as research_router
+from app.api.routes.settings import router as settings_router
+from app.api.routes.strategies import router as strategies_router
+from app.api.routes.trades import router as trades_router
 
 api_router = APIRouter()
 

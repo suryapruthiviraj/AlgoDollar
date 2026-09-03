@@ -35,20 +35,14 @@ overstates returns.
 from __future__ import annotations
 
 import logging
-import math
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
 import numpy as np
 import pandas as pd
 
-from app.backtesting.engine import (
-    BacktestMetrics, BacktestResult, EventDrivenBacktester
-)
+from app.backtesting.engine import BacktestMetrics, BacktestResult, EventDrivenBacktester
 from app.research.statistics import (
-    deflated_sharpe_ratio,
-    probability_of_backtest_overfitting,
     stationary_bootstrap,
 )
 

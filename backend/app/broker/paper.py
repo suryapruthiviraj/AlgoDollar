@@ -64,7 +64,8 @@ import logging
 import math
 import uuid
 from dataclasses import asdict, dataclass, field
-from datetime import date, datetime, time as dtime, timezone
+from datetime import date, datetime, timezone
+from datetime import time as dtime
 from pathlib import Path
 from typing import Callable, Iterable, Optional
 from zoneinfo import ZoneInfo

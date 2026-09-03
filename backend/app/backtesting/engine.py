@@ -24,9 +24,8 @@ Risk-free rate: India 10-year G-Sec, ~6.5% annualized.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, Iterable, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -611,14 +610,11 @@ class EventDrivenBacktester:
         # Max drawdown duration
         dd_duration = 0
         current_duration = 0
-        in_dd = False
         for dd_val in drawdown:
             if dd_val < -0.001:
-                in_dd = True
                 current_duration += 1
                 dd_duration = max(dd_duration, current_duration)
             else:
-                in_dd = False
                 current_duration = 0
 
         # Trade statistics

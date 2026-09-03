@@ -50,7 +50,8 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
-from scipy.stats import norm, spearmanr, t as student_t
+from scipy.stats import norm, spearmanr
+from scipy.stats import t as student_t
 from sklearn.linear_model import RidgeCV
 from sklearn.preprocessing import StandardScaler
 
