@@ -373,12 +373,21 @@ class OrderManager:
             return price
 
         # MARKET / SL-M: the tick must be fresh.
-        if hasattr(broker, "is_stale_tick"):
-            if broker.is_stale_tick(signal.symbol, max_age_seconds=self._max_tick_age_sec):
-                raise StaleDataError(
-                    f"Refusing MARKET order in {signal.symbol}: last tick is "
-                    f"stale or the symbol has never ticked."
-                )
+        #
+        # ORDER MATTERS: fetch the quote FIRST, then judge its freshness.
+        #
+        # The reverse order deadlocked the whole system. `is_stale_tick` reads
+        # a cache that is populated by fetching a quote, so asking "is your
+        # data fresh?" before ever fetching any meant every symbol reported
+        # stale, the order was refused, the fetch never happened, the cache
+        # stayed empty, and the next order was refused identically. No symbol
+        # was ever tradeable. It failed CLOSED, so nothing was ever at risk —
+        # but nothing could trade either.
+        #
+        # Freshness is a property of data you have actually fetched. This is
+        # not a relaxation: the staleness check below still runs, still uses
+        # the configured max age, and a feed returning old or unstamped
+        # timestamps is still refused.
         key = f"{signal.exchange}:{signal.symbol}"
         try:
             quotes = await broker.get_quote([key])
@@ -387,6 +396,29 @@ class OrderManager:
                 f"Refusing MARKET order in {signal.symbol}: quote lookup "
                 f"failed ({type(exc).__name__}: {exc})."
             ) from exc
+
+        # RESIDUAL RISK, DELIBERATELY LEFT TO THE BROKER'S OWN POLICY:
+        #
+        # A quote with no timestamp has unverifiable age. `PaperBroker` treats
+        # that as fresh-but-unverified by default (`strict_quote_staleness=
+        # False`) — a documented choice, made because the current data adapter
+        # does not stamp its quotes.
+        #
+        # Enforcing a timestamp here instead would override that policy from
+        # the order path. It is therefore configured, not hardcoded: any real
+        # deployment must construct the broker with
+        # `strict_quote_staleness=True`, after which an unstamped quote is
+        # stale and the check below refuses the order.
+        #
+        # This is recorded as an open item rather than silently accepted: see
+        # docs/EXECUTION_ARCHITECTURE.md, "What is still not wired".
+        if hasattr(broker, "is_stale_tick"):
+            if broker.is_stale_tick(signal.symbol, max_age_seconds=self._max_tick_age_sec):
+                raise StaleDataError(
+                    f"Refusing MARKET order in {signal.symbol}: the quote just "
+                    f"fetched is stale (older than {self._max_tick_age_sec}s, "
+                    f"or its age could not be verified)."
+                )
         quote = (quotes or {}).get(key) or (quotes or {}).get(signal.symbol)
         if not quote:
             raise StaleDataError(

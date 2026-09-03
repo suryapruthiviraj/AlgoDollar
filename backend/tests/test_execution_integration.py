@@ -1761,24 +1761,44 @@ async def test_16_stale_market_data_produces_no_order():
     assert any("stale" in r.lower() for r in reasons), reasons
 
 
-async def test_16b_a_symbol_that_has_never_ticked_produces_no_order():
+async def test_16b_a_never_quoted_symbol_is_priced_from_a_fresh_fetch():
     """
-    PESSIMISTIC by design: never quoted is treated as stale.
+    REGRESSION for PB-STALE, inverted after the fix.
 
-    This also pins production bug PB-STALE (see `prime_quote_cache`): because
-    nothing on the wired path can populate the staleness cache, this is the
-    permanent state of every symbol, and the first order in a symbol can never
-    be placed.  The system fails CLOSED, which is the safe direction.
+    This test used to pin the bug. `is_stale_tick` read a cache that only
+    `place_order` could populate, while the freshness gate ran BEFORE the
+    quote fetch. A never-quoted symbol was therefore stale, the order was
+    refused, the fetch never happened, the cache stayed empty, and the next
+    order was refused identically. Every symbol was permanently un-tradeable.
+    It failed CLOSED, so nothing was ever at risk — but nothing could trade
+    either, and a system that cannot open a position is not a safe system, it
+    is a broken one.
+
+    Two changes fixed it: `PaperBroker.get_quote` now records quote age (a
+    quote observation IS a freshness observation), and the order path fetches
+    the quote BEFORE judging its age, because freshness is a property of data
+    you have actually fetched.
+
+    Genuine staleness is still refused: `test_16_stale_market_data_produces_
+    no_order` drives a 90-minute-old quote through this same path and asserts
+    that nothing reaches the broker. What changed is only that "never looked"
+    no longer means "permanently forbidden".
     """
     stack = await build_stack(prime=())
-    assert stack.broker.is_stale_tick("NEWCO") is True
+    assert stack.broker.is_stale_tick("NEWCO") is True, (
+        "a symbol never quoted must start out stale"
+    )
     before = await stack.facts()
 
     result = await stack.service.submit_signal(signal("NEWCO"), 10, **WIDE_RISK)
 
-    await assert_nothing_reached_the_broker(stack, before, result)
-    assert stack.broker.is_stale_tick("NEWCO") is True, (
-        "PB-STALE: the wired path still cannot populate the staleness cache"
+    assert result.submitted, (
+        f"the first order in a fresh symbol was refused: {result.reason}"
+    )
+    after = await stack.facts()
+    assert after.order_count == before.order_count + 1
+    assert stack.broker.is_stale_tick("NEWCO") is False, (
+        "the fetch on the order path must leave the staleness cache populated"
     )
 
 
@@ -2343,11 +2363,11 @@ async def test_BUG_a_partially_filled_paper_order_blocks_the_next_reconciliation
     )
 
 
-async def test_BUG_the_wired_path_cannot_place_a_first_order_in_a_fresh_symbol():
+async def test_REGRESSION_the_wired_path_can_place_a_first_order_in_a_fresh_symbol():
     """
-    BUG 7 / PB-STALE (SEVERITY: CRITICAL - the wired path cannot trade at all).
+    REGRESSION for PB-STALE (was: CRITICAL - the wired path could not trade).
 
-    STATUS: OPEN. This test fails.
+    STATUS: FIXED.
 
     WHERE
         app/broker/paper.py:535-548  `is_stale_tick` returns True for any symbol
@@ -2385,9 +2405,16 @@ async def test_BUG_the_wired_path_cannot_place_a_first_order_in_a_fresh_symbol()
         A fully reconciled stack, an open market, a fresh quote, ample cash and
         a wide risk budget - and a symbol not previously snapshot.
 
-    WORKAROUND USED BY THIS SUITE
-        `prime_quote_cache()` calls the real `PaperBroker._snapshot` directly.
-        Every other test in this file depends on it.
+    THE FIX
+        `PaperBroker.get_quote` now records quote age -- a quote observation IS
+        a freshness observation -- and the order path fetches the quote BEFORE
+        judging its age, because freshness is a property of data you have
+        actually fetched. Checking first created a deadlock: stale -> refused
+        -> never fetched -> still stale.
+
+        Genuine staleness is still refused; see
+        `test_16_stale_market_data_produces_no_order`, which drives a
+        90-minute-old quote through this same path.
     """
     stack = await build_stack(prime=())            # nothing pre-primed
     before = await stack.facts()
@@ -2398,9 +2425,9 @@ async def test_BUG_the_wired_path_cannot_place_a_first_order_in_a_fresh_symbol()
     assert stack.recovery.trading_permitted is True
     quotes = await stack.broker.get_quote([f"NSE:{SYMBOL}"])
     assert quotes[f"NSE:{SYMBOL}"]["last_price"] == PRICE, "the feed is quoting"
-    assert stack.broker.is_stale_tick(SYMBOL) is True, (
-        "a symbol quoted a line ago is still reported as stale, because "
-        "PaperBroker.get_quote does not populate _last_quote_age"
+    assert stack.broker.is_stale_tick(SYMBOL) is False, (
+        "a symbol quoted a line ago must be reported as fresh: "
+        "PaperBroker.get_quote records quote age"
     )
 
     result = await stack.service.submit_signal(signal(), 10, **WIDE_RISK)
@@ -2408,8 +2435,7 @@ async def test_BUG_the_wired_path_cannot_place_a_first_order_in_a_fresh_symbol()
     after = await stack.facts()
     assert result.outcome is ExecutionOutcome.SUBMITTED, (
         f"the first order in a fresh symbol was refused "
-        f"({result.outcome.value}): {result.reason}. Nothing on the wired path "
-        f"can populate the paper broker's tick-staleness cache, so no symbol is "
-        f"ever tradeable."
+        f"({result.outcome.value}): {result.reason}. The wired path must be "
+        f"able to open a position in a symbol it has not previously quoted."
     )
     assert after.order_count == before.order_count + 1

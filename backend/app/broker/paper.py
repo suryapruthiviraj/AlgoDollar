@@ -767,8 +767,52 @@ class PaperBroker(BrokerInterface):
     #  Market data                                                         #
     # ------------------------------------------------------------------ #
 
+    def _record_quote_age(self, symbol: str, quote: dict) -> Optional[float]:
+        """
+        Record how old a quote was, for `is_stale_tick`, and return that age.
+
+        A quote observation IS a freshness observation, so anything that reads
+        a price updates the staleness cache. `None` means the feed supplied no
+        timestamp, which strict mode treats as stale.
+        """
+        age: Optional[float] = None
+        ts = (quote or {}).get("timestamp") or (quote or {}).get("last_trade_time")
+        if ts is not None:
+            try:
+                stamp = ts if isinstance(ts, datetime) else datetime.fromisoformat(str(ts))
+                stamp = ensure_aware(stamp, what="quote timestamp")
+                age = (self.now_ist() - stamp).total_seconds()
+            except (ValueError, TypeError) as exc:
+                logger.warning("Unparseable quote timestamp %r for %s: %s", ts, symbol, exc)
+                age = None
+        self._last_quote_age[symbol] = age
+        return age
+
     async def get_quote(self, symbols: list[str]) -> dict[str, dict]:
-        return await self._data_broker.get_quote(symbols)
+        """
+        Fetch quotes AND record their freshness.
+
+        Recording here is not incidental — it is what makes any symbol
+        tradeable at all. `is_stale_tick` reads `_last_quote_age`, and that
+        cache used to be written only inside `_snapshot`, which is reachable
+        only from `place_order`. Since `ExecutionSafety.check_data_freshness`
+        probes staleness BEFORE every order, the result was a deadlock:
+
+            order -> symbol never quoted -> stale -> refused
+                  -> place_order never runs -> cache never written
+                  -> next order refused identically
+
+        Every symbol was permanently un-tradeable. It failed closed, so no
+        money was ever at risk, but nothing could trade either. Priming the
+        cache from a plain quote read breaks the circularity, because a feed
+        (or a caller checking a price) naturally calls this first.
+        """
+        quotes = await self._data_broker.get_quote(symbols)
+        for key, quote in (quotes or {}).items():
+            # Callers may pass bare symbols or "EXCHANGE:SYMBOL"; the
+            # staleness cache is keyed on the bare symbol.
+            self._record_quote_age(str(key).split(":")[-1], quote)
+        return quotes
 
     async def get_historical_data(
         self, symbol: str, exchange: str, interval: str, from_date: str, to_date: str,
@@ -814,17 +858,7 @@ class PaperBroker(BrokerInterface):
         lo = float(ohlc.get("low") or last)
         prev_close = float(ohlc.get("close") or last)
 
-        age: Optional[float] = None
-        ts = q.get("timestamp") or q.get("last_trade_time")
-        if ts is not None:
-            try:
-                stamp = ts if isinstance(ts, datetime) else datetime.fromisoformat(str(ts))
-                stamp = ensure_aware(stamp, what="quote timestamp")
-                age = (self.now_ist() - stamp).total_seconds()
-            except (ValueError, TypeError) as exc:
-                logger.warning("Unparseable quote timestamp %r for %s: %s", ts, key, exc)
-                age = None
-        self._last_quote_age[symbol] = age
+        age = self._record_quote_age(symbol, q)
 
         model_half_bps = self._model_half_spread_bps(last, volume)
         bid_q, ask_q = q.get("bid"), q.get("ask")

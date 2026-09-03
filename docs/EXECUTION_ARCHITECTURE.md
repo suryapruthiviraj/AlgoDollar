@@ -239,3 +239,20 @@ Stated plainly, because a diagram that implies more than exists is worse than no
 - **`InMemoryOrderStore` is the default.** It is a real store, not a stub, but it is not durable. Production requires `RedisOrderStore` or a database implementation.
 - **The live broker has never held a connection.** Everything in the Zerodha adapter is verified by inspection and simulation only.
 - **`LIVE_TRADING_ELIGIBILITY` is `BLOCKED_INSUFFICIENT_DATA`** at 4 of 31 gates. That is the correct state and nothing in this document changes it.
+
+### Open item: unstamped quotes
+
+`PaperBroker` treats a quote with **no timestamp** as fresh-but-unverified
+(`strict_quote_staleness=False`). That is a deliberate, documented choice made
+because the current data adapter does not stamp its quotes — but it means a
+market order can be priced against data whose age cannot be checked.
+
+The order path does **not** override this, so it remains configurable rather
+than hardcoded. **Any real deployment must construct the broker with
+`strict_quote_staleness=True`**, after which an unstamped quote is stale and
+the freshness gate refuses the order.
+
+This is recorded as an open item rather than quietly accepted. It is not the
+same as the PB-STALE deadlock, which is fixed: genuine staleness is refused
+(a 90-minute-old quote is rejected, verified by test), and what changed is
+only that "never quoted before" no longer means "permanently untradeable".
