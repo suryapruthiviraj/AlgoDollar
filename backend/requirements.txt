@@ -25,5 +25,5 @@ bcrypt==4.2.0
 cryptography==50.0.1   # PYSEC-2026-3552/3553/3554, GHSA-537c-gmf6-5ccf
 greenlet==3.1.1
 anyio==4.6.2
-starlette==0.41.3
+starlette==1.6.0
 pytz==2024.2
