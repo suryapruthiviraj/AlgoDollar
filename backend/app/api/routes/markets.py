@@ -196,24 +196,29 @@ async def market_regime(
 async def market_sectors(
     current_user: User = Depends(get_current_user),
 ) -> list[SectorPerformance]:
-    import random
-
-    random.seed(42)
-    results: list[SectorPerformance] = []
-    for sector in SECTOR_LIST:
-        chg = round(random.uniform(-3.0, 4.0), 2)
-        results.append(
-            SectorPerformance(
-                sector=sector,
-                change_pct=chg,
-                top_stock=f"{sector[:3].upper()}STOCK",
-                top_stock_change_pct=round(chg + random.uniform(0.5, 2.0), 2),
-                num_advances=random.randint(3, 12),
-                num_declines=random.randint(1, 8),
-            )
-        )
-    results.sort(key=lambda x: x.change_pct, reverse=True)
-    return results
+    # ── REMOVED: fabricated sector performance ────────────────────────────
+    #
+    # This endpoint used to invent its data: a seeded RNG produced a change
+    # percentage per sector, a made-up "top stock" ticker of the form
+    # "REASTOCK", and advance/decline counts — all returned as if measured.
+    # The dashboard renders the result as a sector heatmap, so a user was
+    # shown market data that never existed.
+    #
+    # Fabricated market data is worse than none: it is indistinguishable from
+    # the real thing at a glance and it can inform a decision. Real sector
+    # performance needs a live market feed and point-in-time sector
+    # classification, neither of which is wired in — see
+    # docs/DATA_INTEGRITY_REPORT.md, which records that only present-day
+    # sector membership exists.
+    raise HTTPException(
+        status_code=501,
+        detail=(
+            "Sector performance is not available. This endpoint previously "
+            "returned randomly generated figures, which have been removed. It "
+            "requires a live market data feed and point-in-time sector "
+            "classification; see docs/DATA_ACQUISITION_PLAN.md."
+        ),
+    )
 
 
 @router.get("/opportunities", response_model=list[Opportunity])

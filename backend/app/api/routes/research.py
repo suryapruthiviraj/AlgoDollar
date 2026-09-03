@@ -105,31 +105,43 @@ _backtest_store: dict[str, BacktestResult] = {}
 
 def _run_backtest_sync(req: BacktestRequest) -> BacktestResult:
     """
-    Simplified vectorised backtest.  A production implementation would:
-    1. Pull OHLCV data from a timeseries store.
-    2. Generate signals using the appropriate strategy module.
-    3. Simulate fills with realistic slippage and cost model.
-    4. Compute full performance analytics.
+    NOT IMPLEMENTED — deliberately refuses rather than inventing a result.
 
-    Here we produce plausible placeholder metrics so the API layer is
-    fully functional and testable end-to-end.
+    This function used to fabricate its output. A seeded RNG produced a Sharpe
+    ratio between 0.8 and 2.2, an annualized return between 8% and 22%, a win
+    rate, a profit factor and a monthly equity curve, and returned them in a
+    `BacktestResult` indistinguishable from a real one. The dashboard's "Run
+    Backtest" button calls this endpoint, so a user was shown invented
+    performance figures presented as measured ones.
+
+    That is disqualifying for this project. Every report in docs/ states that
+    no strategy has been validated and that backtest results must never be
+    fabricated; an endpoint quietly doing exactly that undermines all of it.
+
+    A real engine already exists — `app.backtesting.engine.EventDrivenBacktester`
+    with a real Zerodha cost model, and `app.research.pipeline` for purged
+    walk-forward validation. Until this endpoint is wired to them, refusing is
+    the honest behaviour: returning nothing is strictly better than returning
+    fiction.
     """
-    import uuid
-    from datetime import timedelta
-
     days = (req.end_date - req.start_date).days
     if days < 30:
         raise ValueError("Backtest window must be at least 30 days.")
 
-    # Deterministic pseudo-metrics derived from request params
-    import hashlib
+    raise NotImplementedError(
+        "Backtesting via this endpoint is not implemented. It previously "
+        "returned randomly generated performance metrics, which have been "
+        "removed. Use app.backtesting.engine.EventDrivenBacktester with "
+        "app.research.pipeline; see docs/REAL_DATA_VALIDATION_REPORT.md. "
+        "PRODUCTION MODEL = NONE."
+    )
 
-    seed_str = f"{req.strategy}{req.start_date}{req.end_date}"
-    seed = int(hashlib.md5(seed_str.encode()).hexdigest(), 16) % (10**6)
-    import random
 
-    rng = random.Random(seed)
-
+def _unreachable_reference_implementation(req: "BacktestRequest", rng, days: int):
+    """
+    Retained only to document the response schema for whoever wires the real
+    engine to this endpoint. Never called.
+    """
     annual_ret = rng.uniform(0.08, 0.22)
     years = days / 365.25
     total_ret = (1 + annual_ret) ** years - 1
@@ -205,6 +217,16 @@ async def run_backtest(
         result = _run_backtest_sync(body)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except NotImplementedError as exc:
+        # 501, not 500: this endpoint is deliberately unimplemented rather than
+        # broken. It used to return fabricated performance metrics; refusing is
+        # the correct behaviour until it is wired to the real backtester.
+        logger.warning(
+            "backtest_endpoint_not_implemented",
+            user_id=current_user.id,
+            strategy=body.strategy,
+        )
+        raise HTTPException(status_code=501, detail=str(exc)) from exc
 
     logger.info(
         "backtest_completed",

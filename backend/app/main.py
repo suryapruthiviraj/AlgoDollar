@@ -82,9 +82,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         log.error("database_init_failed", error=str(exc))
 
     try:
-        import aioredis
+        # `redis.asyncio`, not `aioredis`. The standalone aioredis package was
+        # merged into redis-py and is unmaintained; aioredis 2.0.1 cannot even
+        # be imported on Python 3.11+ (`duplicate base class TimeoutError`).
+        # Because that ImportError was caught here, Redis silently reported
+        # "unavailable" on every startup and the kill-switch store backed by it
+        # would never have worked in production.
+        import redis.asyncio as redis_asyncio
 
-        redis = aioredis.from_url(settings.redis_url, socket_connect_timeout=5)
+        redis = redis_asyncio.from_url(settings.redis_url, socket_connect_timeout=5)
         await redis.ping()
         await redis.aclose()
         log.info("redis_ready")

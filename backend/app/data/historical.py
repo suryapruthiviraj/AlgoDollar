@@ -12,8 +12,8 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import io
 import logging
-import pickle
 from datetime import date, datetime, timedelta
 from typing import Dict, Optional
 
@@ -317,6 +317,18 @@ class HistoricalDataProvider:
     # Cache helpers
     # ------------------------------------------------------------------
 
+    # Parquet, NOT pickle.
+    #
+    # `pickle.loads` executes arbitrary code contained in its payload, so write
+    # access to the cache becomes remote code execution inside the trading
+    # process. That is not hypothetical here: the SAME Redis instance holds the
+    # KILL SWITCH. One attacker-written key could both disable the halt control
+    # and execute code — from a cache of daily price bars, which needs no such
+    # capability.
+    #
+    # Parquet is data-only: a hostile payload can at worst be malformed, and a
+    # malformed payload is caught below and treated as a cache miss.
+
     async def _cache_get(self, key: str) -> Optional[pd.DataFrame]:
         if self._redis is None:
             return None
@@ -324,8 +336,10 @@ class HistoricalDataProvider:
             data = await self._redis.get(key)
             if data is None:
                 return None
-            return pickle.loads(data)
+            return pd.read_parquet(io.BytesIO(data))
         except Exception as exc:
+            # A corrupt or unreadable entry is a cache MISS — never a crash,
+            # and never executed. The caller re-fetches from upstream.
             logger.warning("Redis get failed for %s: %s", key, exc)
             return None
 
@@ -333,6 +347,8 @@ class HistoricalDataProvider:
         if self._redis is None:
             return
         try:
-            await self._redis.setex(key, ttl, pickle.dumps(df))
+            buf = io.BytesIO()
+            df.to_parquet(buf, index=True)
+            await self._redis.setex(key, ttl, buf.getvalue())
         except Exception as exc:
             logger.warning("Redis set failed for %s: %s", key, exc)

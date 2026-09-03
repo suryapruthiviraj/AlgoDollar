@@ -44,9 +44,12 @@ async def _check_db(session: AsyncSession) -> str:
 
 async def _check_redis() -> str:
     try:
-        import aioredis
+        # `redis.asyncio`, not `aioredis` — see the note in app/main.py. The
+        # old import could never succeed on Python 3.11+, so this health check
+        # reported "disconnected" even against a perfectly healthy Redis.
+        import redis.asyncio as redis_asyncio
 
-        redis = aioredis.from_url(settings.redis_url, socket_connect_timeout=2)
+        redis = redis_asyncio.from_url(settings.redis_url, socket_connect_timeout=2)
         await redis.ping()
         await redis.aclose()
         return "connected"
