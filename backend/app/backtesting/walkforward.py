@@ -43,8 +43,13 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 import numpy as np
 import pandas as pd
 
-from backend.app.backtesting.engine import (
+from app.backtesting.engine import (
     BacktestMetrics, BacktestResult, EventDrivenBacktester
+)
+from app.research.statistics import (
+    deflated_sharpe_ratio,
+    probability_of_backtest_overfitting,
+    stationary_bootstrap,
 )
 
 logger = logging.getLogger(__name__)
@@ -87,17 +92,67 @@ class WalkForwardResult:
     mean_train_sharpe:         float
     mean_oos_sharpe:           float
 
-    def flag_overfit(self) -> bool:
+    def overfitting_flags(self) -> dict[str, bool]:
         """
-        Return True if there are consistent signs of overfitting.
+        Independent overfitting warning signs, each evaluated separately.
 
-        Criterion: mean train Sharpe is more than 2× mean OOS Sharpe
-        AND mean OOS Sharpe < 0.5.
+        The previous single criterion (train > 2x OOS *and* OOS < 0.5) missed
+        the most common real case: a strategy with train Sharpe 3.0 and OOS
+        Sharpe 0.6 has clearly overfit, but passed because 0.6 > 0.5. These
+        checks are combined with OR, not AND — any one of them firing is
+        reason to distrust the result.
         """
-        if not self.oos_sharpe_distribution or self.mean_oos_sharpe == 0:
+        oos = np.asarray(self.oos_sharpe_distribution, dtype=float)
+        n = len(oos)
+
+        flags = {
+            # Large in-sample/out-of-sample gap, regardless of the OOS level.
+            "large_is_oos_gap": (
+                self.mean_train_sharpe - self.mean_oos_sharpe > 1.0
+            ),
+            # OOS performance that does not clear a plausible cost hurdle.
+            "weak_oos": self.mean_oos_sharpe < 0.5,
+            # Performance concentrated in a minority of windows: a strategy
+            # that works in 2 of 7 periods is a regime bet, not an edge.
+            "inconsistent_across_windows": (
+                n > 0 and float((oos > 0).mean()) < 0.6
+            ),
+            # High dispersion relative to the mean: the point estimate is not
+            # distinguishable from noise across windows.
+            "unstable_oos": (
+                n > 1
+                and self.mean_oos_sharpe > 0
+                and float(oos.std(ddof=1)) > abs(self.mean_oos_sharpe)
+            ),
+            # A suspiciously high OOS Sharpe usually means a leak, not alpha.
+            "implausibly_high_oos": self.mean_oos_sharpe > 3.0,
+            # Parameters that jump between windows describe noise, not a
+            # stable phenomenon.
+            "unstable_parameters": self._parameters_unstable(),
+        }
+        return flags
+
+    def _parameters_unstable(self) -> bool:
+        """True if any selected numeric parameter varies wildly across windows."""
+        for spec in self.parameter_stability.values():
+            mean, std = spec.get("mean"), spec.get("std")
+            if mean and std and abs(mean) > 1e-12 and std / abs(mean) > 0.5:
+                return True
+        return False
+
+    def flag_overfit(self) -> bool:
+        """True if ANY overfitting warning sign is present."""
+        if not self.oos_sharpe_distribution:
             return False
-        ratio = self.mean_train_sharpe / max(self.mean_oos_sharpe, 1e-6)
-        return ratio > 2.0 and self.mean_oos_sharpe < 0.5
+        return any(self.overfitting_flags().values())
+
+    def overfitting_report(self) -> str:
+        """Human-readable list of which warning signs fired."""
+        flags = self.overfitting_flags()
+        fired = [k for k, v in flags.items() if v]
+        if not fired:
+            return "No overfitting warning signs detected."
+        return "OVERFITTING WARNINGS: " + ", ".join(fired)
 
 
 @dataclass
@@ -404,9 +459,19 @@ class MonteCarloEngine:
     """
     Bootstrap Monte Carlo simulation from an empirical return series.
 
-    Method: IID bootstrap (resample daily returns WITH replacement).
-    This DOES NOT preserve autocorrelation.  For autocorrelated returns
-    (e.g. momentum), results will be conservative (understate tail risk).
+    Default method: STATIONARY BLOCK BOOTSTRAP (Politis-Romano 1994).
+
+    The obvious approach — resampling daily returns independently — is wrong
+    for trading strategies. It destroys autocorrelation and volatility
+    clustering, and drawdown is driven almost entirely by those two
+    properties. A momentum strategy's real losing streaks come from
+    consecutive correlated losses; IID resampling scatters those losses across
+    the path and produces drawdown distributions that are far too shallow.
+
+    Block resampling preserves local dependence, so simulated tails resemble
+    the tails the strategy would actually experience. `method="iid"` is kept
+    for comparison, and the gap between the two is itself diagnostic: a large
+    gap means the strategy's risk is dominated by serial dependence.
     """
 
     def run(
@@ -418,13 +483,15 @@ class MonteCarloEngine:
         risk_of_ruin_threshold: float = 0.50,
         save_paths: bool = False,
         random_seed: int = 42,
+        method: str = "block",
+        mean_block_length: Optional[float] = None,
     ) -> MonteCarloResult:
         """
         Run Monte Carlo simulation.
 
         Parameters
         ----------
-        equity_curve : pd.Series, portfolio equity curve (prices, not returns).
+        equity_curve : pd.Series, portfolio equity curve (levels, not returns).
         n_simulations : int
         horizon_1yr : int, trading days in 1 year (252).
         horizon_3yr : int, trading days in 3 years (756).
@@ -432,6 +499,10 @@ class MonteCarloEngine:
             Define "ruin" as equity falling below this fraction of initial.
         save_paths : bool, if True include all simulated paths in result.
         random_seed : int
+        method : {"block", "iid"}
+            "block" preserves autocorrelation and is the correct default.
+        mean_block_length : float, optional
+            Expected block length. Defaults to T**(1/3).
 
         Returns
         -------
@@ -450,9 +521,19 @@ class MonteCarloEngine:
         initial = float(equity_curve.iloc[0])
         horizon = max(horizon_1yr, horizon_3yr)
 
-        # Bootstrap: shape (n_simulations, horizon)
-        indices = rng.integers(0, n_obs, size=(n_simulations, horizon))
-        sampled_returns = daily_returns[indices]  # shape (n_sim, horizon)
+        if method == "block":
+            sampled_returns = stationary_bootstrap(
+                daily_returns,
+                n_simulations=n_simulations,
+                horizon=horizon,
+                mean_block_length=mean_block_length,
+                random_seed=random_seed,
+            )
+        elif method == "iid":
+            indices = rng.integers(0, n_obs, size=(n_simulations, horizon))
+            sampled_returns = daily_returns[indices]
+        else:
+            raise ValueError(f"method must be 'block' or 'iid', got {method!r}")
 
         # Compound into equity paths
         paths = initial * np.cumprod(1 + sampled_returns, axis=1)  # (n_sim, horizon)

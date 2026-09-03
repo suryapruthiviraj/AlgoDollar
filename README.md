@@ -10,6 +10,37 @@
 
 ---
 
+## Current status: research infrastructure, not a validated strategy
+
+**No component of this system has been validated on real market data.** There is no market
+data in this repository, no trained model, and no backtest of a real instrument. The
+infrastructure to conduct that research honestly now exists; the research itself has not
+been done.
+
+| | Status |
+|---|---|
+| Production model selected | **None** |
+| Expected return | **Unknown** |
+| Out-of-sample performance on Indian equities | **Unmeasured** |
+| Live trading | **Disabled**, and must remain so |
+
+An adversarial self-audit found and fixed a large number of defects, several of which would
+have lost money in production — regime detection that had no effect on allocation, user risk
+caps that did not bind, an intraday book that would never have squared off on a UTC server,
+and long-term buy/sell decisions driven by an unseeded random number generator. The audit
+also found that the original test suite imported **zero** production modules and therefore
+verified nothing.
+
+Read **[docs/AUDIT_REPORT.md](docs/AUDIT_REPORT.md)** before trusting anything here, and in
+particular before interpreting any performance number this codebase produces.
+
+What the audit *did* verify is that the machinery behaves correctly on data with known
+ground truth: the feature layer is free of look-ahead, the backtester does not manufacture
+edge from noise, and the multiple-testing controls correctly reject a strategy showing a
+1.89 Sharpe ratio that was cherry-picked from 1000 attempts on pure noise.
+
+---
+
 ## What is AlgoDollar?
 
 AlgoDollar is a personal quantitative trading platform for the Indian equity markets (NSE).

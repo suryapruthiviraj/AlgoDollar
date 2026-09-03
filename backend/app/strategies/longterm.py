@@ -20,12 +20,22 @@ Composite scoring
 score = 0.30 * quality + 0.25 * growth + 0.20 * valuation
        + 0.15 * momentum + 0.10 * risk
 
-BUY if composite > 65 AND valuation_score NOT in bottom decile (not expensive).
-REDUCE/SELL if composite < 40 OR fundamental deterioration detected.
+The composite is an average of five components that are each centred at 50
+with capped z-scores, so averaging SHRINKS its dispersion: empirically
+mean ~49, sd ~6, max ~68 over 1500 draws.  Absolute cut-offs on that scale are
+therefore not interchangeable with intuition about "a score out of 100" —
+a 65 buy threshold admitted 0.2% of names while a 40 sell threshold fired on
+6.5%, i.e. a structurally one-way liquidating book.  Thresholds are now
+CROSS-SECTIONAL PERCENTILES of the universe actually being scored:
+
+BUY    if composite is in the top decile of the current universe
+       AND valuation_score is not in the "expensive" tail.
+SELL   if composite falls into the bottom quintile of the current universe.
 """
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import warnings
 from datetime import datetime
@@ -34,8 +44,9 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from backend.app.strategies.base import (
-    BaseStrategy, Signal, SignalDirection, StrategyHealth
+from app.strategies.base import (
+    DELIVERY_ROUND_TRIP_COST, MAX_GROSS_EXPOSURE,
+    BaseStrategy, Signal, SignalDirection,
 )
 
 logger = logging.getLogger(__name__)
@@ -49,9 +60,42 @@ _W_VALUATION  = 0.20
 _W_MOMENTUM   = 0.15
 _W_RISK       = 0.10
 
+# Cross-sectional percentile thresholds (see module docstring).
+_BUY_PERCENTILE   = 90.0   # buy the top decile of the scored universe
+_SELL_PERCENTILE  = 20.0   # sell out of the bottom quintile
+
+# Absolute fallbacks, used ONLY when there is no cross-section to rank
+# against (e.g. should_exit() on a single position with no universe context).
 _BUY_THRESHOLD    = 65.0
 _SELL_THRESHOLD   = 40.0
+
+# A percentile cut needs a real cross-section behind it.  Below this many
+# scored names the strategy emits no BUYs rather than ranking noise.
+_MIN_UNIVERSE_FOR_PERCENTILE = 20
+
 _MAX_EXPENSIVE_VALUATION_SCORE = 20.0  # reject if valuation_score < 20 (top decile expensive)
+
+# Expected 1-year excess return attributed to a top-decile composite.  Used to
+# turn the (dimensionless) composite percentile into Signal.expected_return so
+# that the number carries the same units as holding_period_days=252.
+_EXPECTED_ANNUAL_SPREAD = 0.08
+
+# Round-trip cost for a CNC (delivery) trade — see base.py.
+_COST_ESTIMATE_DELIVERY = DELIVERY_ROUND_TRIP_COST
+
+_LONGTERM_HOLDING_DAYS = 252
+
+
+class MockDataInLiveModeError(RuntimeError):
+    """
+    Raised when a strategy backed by MOCK/synthetic fundamentals is asked to
+    act outside paper mode.
+
+    Synthetic fundamentals must never be able to drive a real order.  This is
+    a hard runtime guard rather than a comment because the previous
+    ``metadata={"data_source": "MOCK"}`` marker had no consumer anywhere in
+    the system.
+    """
 
 # ---------------------------------------------------------------------------
 # Mock fundamental data — replace with real data provider in production
@@ -61,13 +105,41 @@ class _MockFundamentalProvider:
     """
     Synthetic fundamental data for development and testing.
 
-    ALL VALUES ARE FAKE AND RANDOMLY GENERATED.  This provider exists solely
-    to allow integration tests and UI development without a paid data feed.
+    ALL VALUES ARE FAKE.  This provider exists solely to allow integration
+    tests and UI development without a paid data feed.
 
-    NEVER use mock data for real capital allocation decisions.
+    NEVER use mock data for real capital allocation decisions — the
+    IS_MOCK flag below is checked at runtime and blocks non-paper use.
+
+    DETERMINISM
+    -----------
+    The generator is seeded PER SYMBOL from a stable hash of the symbol, so
+    get_fundamentals("RELIANCE") returns the same dict every time, in every
+    process.  The previous class-level RNG advanced on every call, so the same
+    stock scored 39.3 / 50.6 / 37.7 on three consecutive calls and straddled
+    the sell threshold: buy/sell decisions were coin flips.
     """
 
-    _RNG = np.random.default_rng(seed=42)
+    #: Consumed by LongtermStrategy._assert_data_source_safe().
+    IS_MOCK = True
+    DATA_SOURCE = "MOCK"
+
+    _SEED_SALT = 42
+
+    @staticmethod
+    def _seed_for(key: str) -> int:
+        """
+        Stable 64-bit seed derived from a key.
+
+        Uses blake2b rather than the builtin hash(), which is randomised per
+        process by PYTHONHASHSEED and would silently break reproducibility
+        across restarts.
+        """
+        digest = hashlib.blake2b(
+            f"{_MockFundamentalProvider._SEED_SALT}:{key}".encode("utf-8"),
+            digest_size=8,
+        ).digest()
+        return int.from_bytes(digest, "big")
 
     @classmethod
     def get_fundamentals(cls, symbol: str) -> Dict[str, float]:
@@ -77,7 +149,7 @@ class _MockFundamentalProvider:
             UserWarning,
             stacklevel=4,
         )
-        rng = cls._RNG
+        rng = np.random.default_rng(cls._seed_for(f"fundamentals:{symbol}"))
         return {
             # Quality
             "roe":                  rng.uniform(5, 35),        # %
@@ -105,17 +177,18 @@ class _MockFundamentalProvider:
 
     @classmethod
     def get_sector_medians(cls, sector: str) -> Dict[str, float]:
-        """Synthetic sector median multiples."""
+        """Synthetic sector median multiples — deterministic per sector."""
         warnings.warn(
             f"[MOCK DATA] Returning synthetic sector medians for {sector}.",
             UserWarning,
             stacklevel=4,
         )
+        rng = np.random.default_rng(cls._seed_for(f"sector:{sector}"))
         return {
-            "pe_median":      cls._RNG.uniform(15, 35),
-            "roe_median":     cls._RNG.uniform(10, 25),
-            "roce_median":    cls._RNG.uniform(12, 28),
-            "ev_ebitda_median": cls._RNG.uniform(8, 20),
+            "pe_median":      rng.uniform(15, 35),
+            "roe_median":     rng.uniform(10, 25),
+            "roce_median":    rng.uniform(12, 28),
+            "ev_ebitda_median": rng.uniform(8, 20),
         }
 
 
@@ -164,17 +237,29 @@ class LongtermStrategy(BaseStrategy):
         max_positions: int = 20,
         buy_threshold: float = _BUY_THRESHOLD,
         sell_threshold: float = _SELL_THRESHOLD,
+        buy_percentile: float = _BUY_PERCENTILE,
+        sell_percentile: float = _SELL_PERCENTILE,
     ):
         """
         Parameters
         ----------
         fundamental_provider
             Object with .get_fundamentals(symbol) → dict and
-            .get_sector_medians(sector) → dict.  If None, uses MOCK provider.
+            .get_sector_medians(sector) → dict.  If None, uses the MOCK
+            provider — which then makes the strategy refuse to run outside
+            paper mode (see _assert_data_source_safe).
         paper_mode : bool
         max_positions : int
-        buy_threshold : float, composite score above which to BUY.
-        sell_threshold : float, composite score below which to SELL.
+        buy_percentile : float
+            Cross-sectional percentile of the CURRENT universe above which to
+            BUY (90 = top decile).  This is the operative buy rule.
+        sell_percentile : float
+            Cross-sectional percentile below which a HELD name is sold
+            (20 = bottom quintile).  This is the operative sell rule.
+        buy_threshold, sell_threshold : float
+            Absolute composite fallbacks, used only when no cross-section is
+            available to rank against.  Retained for API compatibility; the
+            percentile rules take precedence in generate_signals().
         """
         super().__init__(paper_mode=paper_mode)
         if fundamental_provider is None:
@@ -187,6 +272,45 @@ class LongtermStrategy(BaseStrategy):
         self.max_positions = max_positions
         self.buy_threshold = buy_threshold
         self.sell_threshold = sell_threshold
+        self.buy_percentile = float(buy_percentile)
+        self.sell_percentile = float(sell_percentile)
+        #: Absolute composite cut implied by sell_percentile at the last
+        #: generate_signals() call; consumed by should_exit().
+        self._last_sell_cut: Optional[float] = None
+
+        # Fail fast: a mock-backed strategy may not even be CONSTRUCTED live.
+        self._assert_data_source_safe("construction")
+
+    # ------------------------------------------------------------------
+    # Data-source guard
+    # ------------------------------------------------------------------
+
+    @property
+    def uses_mock_data(self) -> bool:
+        """True if the wired fundamental provider is synthetic."""
+        return bool(getattr(self._fund, "IS_MOCK", False))
+
+    @property
+    def data_source(self) -> str:
+        """Provider-declared data source, e.g. "MOCK" or "screener.in"."""
+        return str(getattr(self._fund, "DATA_SOURCE", "UNKNOWN"))
+
+    def _assert_data_source_safe(self, context: str) -> None:
+        """
+        Refuse to operate on synthetic fundamentals outside paper mode.
+
+        Called on construction AND on every signal-generating / sizing entry
+        point, because paper_mode is a mutable attribute — checking once at
+        construction would be trivially defeated by flipping it afterwards.
+        """
+        if self.uses_mock_data and not self.paper_mode:
+            raise MockDataInLiveModeError(
+                f"LongtermStrategy refused at {context}: fundamental provider "
+                f"{type(self._fund).__name__} is MOCK (synthetic) data and "
+                "paper_mode is False.  Synthetic fundamentals must never size "
+                "or trigger a real order.  Wire a real fundamental provider, "
+                "or run with paper_mode=True."
+            )
 
     # ------------------------------------------------------------------
     # Signal generation
@@ -220,6 +344,9 @@ class LongtermStrategy(BaseStrategy):
         -------
         list[Signal]
         """
+        # Hard guard: synthetic fundamentals may never reach a live order.
+        self._assert_data_source_safe("generate_signals")
+
         if not self._is_operational():
             logger.info("LongtermStrategy is %s; no signals.", self.health)
             return []
@@ -240,53 +367,100 @@ class LongtermStrategy(BaseStrategy):
         if not all_scores:
             return []
 
+        # ---- Cross-sectional cuts (defect: 65/40 were absolute magic numbers
+        # on a shrunken scale — P(buy)=0.2%, P(sell)=6.5%, a one-way book) ----
+        buy_cut, sell_cut = self._threshold_cuts(all_scores)
+        self._last_sell_cut = sell_cut
+
+        buy_signals: List[Signal] = []
+
         # --- BUY signals for non-held stocks ---
-        buy_candidates = [
-            (sym, score, sd)
-            for sym, score, sd in all_scores
-            if sym not in existing_syms
-            and score >= self.buy_threshold
-            and sd.get("valuation_score", 50) >= _MAX_EXPENSIVE_VALUATION_SCORE
-        ]
-        buy_candidates.sort(key=lambda x: x[1], reverse=True)
-
         available_slots = self.max_positions - len(existing_syms)
-        for sym, comp_score, score_dict in buy_candidates[:available_slots]:
-            ohlcv = market_data.get(sym)
-            if ohlcv is None or ohlcv.empty:
-                continue
-            last_price = ohlcv["close"].iloc[-1]
-            atr = self._compute_atr(ohlcv)
-            stop_loss_pct = max((2.5 * atr) / last_price, 0.05) if last_price > 0 else 0.05
-            target_pct    = stop_loss_pct * 3.0  # 3:1 for long-term
-
-            vol = self._compute_realized_vol(ohlcv, 63)
-            expected_ret = (comp_score - 50) / 100.0  # rough proxy
-
-            signal = Signal(
-                symbol=sym,
-                direction=SignalDirection.LONG,
-                strategy_name=self.name,
-                timestamp=now,
-                signal_date=now,
-                edge_score=max(0.0, expected_ret - 0.002),
-                expected_return=expected_ret,
-                expected_return_std=expected_ret * 0.8,
-                stop_loss_pct=stop_loss_pct,
-                target_pct=target_pct,
-                holding_period_days=252,
-                feature_snapshot={
-                    "composite_score": comp_score,
-                    "quality_score":    score_dict.get("quality_score", 0),
-                    "growth_score":     score_dict.get("growth_score", 0),
-                    "valuation_score":  score_dict.get("valuation_score", 0),
-                    "momentum_score":   score_dict.get("momentum_score", 0),
-                    "risk_score":       score_dict.get("risk_score", 0),
-                    "realized_vol_63d": vol,
-                },
-                metadata={"regime": regime or "UNKNOWN", "data_source": "MOCK"},
+        if available_slots <= 0:
+            logger.info(
+                "Longterm at position limit (%d held / %d max): no BUY signals.",
+                len(existing_syms), self.max_positions,
             )
-            signals.append(signal)
+        elif buy_cut is None:
+            logger.info(
+                "Only %d names scored (< %d): no cross-section to rank "
+                "against, so no BUY signals.",
+                len(all_scores), _MIN_UNIVERSE_FOR_PERCENTILE,
+            )
+        else:
+            buy_candidates = [
+                (sym, score, sd)
+                for sym, score, sd in all_scores
+                if sym not in existing_syms
+                and score >= buy_cut
+                and sd.get("valuation_score", 50) >= _MAX_EXPENSIVE_VALUATION_SCORE
+            ]
+            buy_candidates.sort(key=lambda x: x[1], reverse=True)
+
+            # NOTE: available_slots is guaranteed > 0 here.  Without that
+            # guard, buy_candidates[:-10] (Python's negative slice) returned
+            # items instead of [] and emitted BUYs while over the limit.
+            comps = np.array([s for _, s, _ in all_scores], dtype=float)
+            for sym, comp_score, score_dict in buy_candidates[:available_slots]:
+                ohlcv = market_data.get(sym)
+                if ohlcv is None or ohlcv.empty:
+                    continue
+                last_price = ohlcv["close"].iloc[-1]
+                atr = self._compute_atr(ohlcv)
+                stop_loss_pct = max((2.5 * atr) / last_price, 0.05) if last_price > 0 else 0.05
+                target_pct    = stop_loss_pct * 3.0  # 3:1 for long-term
+
+                vol = self._compute_realized_vol(ohlcv, 63)
+                pct_rank = float((comps <= comp_score).mean())
+                expected_ret = self._expected_annual_return(pct_rank)
+                edge = expected_ret - _COST_ESTIMATE_DELIVERY
+                if edge <= 0:
+                    continue
+
+                signal = Signal(
+                    symbol=sym,
+                    direction=SignalDirection.LONG,
+                    strategy_name=self.name,
+                    timestamp=now,
+                    signal_date=now,
+                    edge_score=edge,
+                    expected_return=expected_ret,
+                    expected_return_std=max(vol, 1e-6),
+                    stop_loss_pct=stop_loss_pct,
+                    target_pct=target_pct,
+                    holding_period_days=_LONGTERM_HOLDING_DAYS,
+                    feature_snapshot={
+                        "composite_score": comp_score,
+                        "composite_pct_rank": pct_rank,
+                        "quality_score":    score_dict.get("quality_score", 0),
+                        "growth_score":     score_dict.get("growth_score", 0),
+                        "valuation_score":  score_dict.get("valuation_score", 0),
+                        "momentum_score":   score_dict.get("momentum_score", 0),
+                        "risk_score":       score_dict.get("risk_score", 0),
+                        "realized_vol_63d": vol,
+                    },
+                    metadata={
+                        "regime": regime or "UNKNOWN",
+                        "data_source": self.data_source,
+                        "return_units": (
+                            f"simple_return_over_{_LONGTERM_HOLDING_DAYS}"
+                            "_trading_days"
+                        ),
+                        "buy_cut": buy_cut,
+                        "buy_percentile": self.buy_percentile,
+                    },
+                )
+                buy_signals.append(signal)
+
+            # Portfolio budget across the emitted BUY set (20 x 10% cap was
+            # 200% gross with no cross-signal normalisation).
+            budget = self._entry_budget(self.max_positions, len(existing_syms))
+            self._stamp_target_weights(
+                buy_signals,
+                [self._raw_target_weight(s) for s in buy_signals],
+                budget=budget,
+            )
+            signals.extend(buy_signals)
 
         # --- SELL signals for held positions ---
         for sym in existing_syms:
@@ -296,12 +470,17 @@ class LongtermStrategy(BaseStrategy):
                 )
                 comp = score_dict["composite"]
             except StopIteration:
-                comp = 0.0
+                # Held name not scoreable this cycle — treat as deteriorated.
+                logger.warning("Held name %s could not be scored; flagging exit.", sym)
+                comp = float("-inf")
 
-            if comp < self.sell_threshold:
+            effective_sell_cut = (
+                sell_cut if sell_cut is not None else self.sell_threshold
+            )
+            if comp < effective_sell_cut:
                 logger.info(
-                    "SELL signal for %s: composite=%.1f < threshold=%.1f",
-                    sym, comp, self.sell_threshold,
+                    "SELL signal for %s: composite=%.1f < cut=%.1f (p%.0f of universe)",
+                    sym, comp, effective_sell_cut, self.sell_percentile,
                 )
                 ohlcv = market_data.get(sym)
                 last_price = 0.0
@@ -320,16 +499,64 @@ class LongtermStrategy(BaseStrategy):
                     target_pct=0.0,
                     holding_period_days=0,
                     feature_snapshot={"composite_score": comp},
-                    metadata={"reason": "composite_below_threshold"},
+                    metadata={
+                        "reason": "composite_below_cross_sectional_cut",
+                        "sell_cut": effective_sell_cut,
+                        "sell_percentile": self.sell_percentile,
+                        "data_source": self.data_source,
+                    },
                 ))
 
         logger.info(
-            "LongtermStrategy: %d universe, %d buy signals, %d sell signals",
+            "LongtermStrategy: %d universe, %d buy signals, %d sell signals "
+            "(buy_cut=%s, sell_cut=%s)",
             len(universe),
             sum(1 for s in signals if s.direction == SignalDirection.LONG),
             sum(1 for s in signals if s.direction == SignalDirection.EXIT),
+            f"{buy_cut:.1f}" if buy_cut is not None else "n/a",
+            f"{sell_cut:.1f}" if sell_cut is not None else "n/a",
         )
         return signals
+
+    # ------------------------------------------------------------------
+    # Cross-sectional thresholds
+    # ------------------------------------------------------------------
+
+    def _threshold_cuts(
+        self,
+        all_scores: List[Tuple[str, float, dict]],
+    ) -> Tuple[Optional[float], Optional[float]]:
+        """
+        Convert the buy/sell PERCENTILES into absolute composite cuts using
+        the realised cross-sectional distribution of this scoring run.
+
+        Returns (buy_cut, sell_cut).  Both are None when the universe is too
+        small for a percentile to mean anything, in which case the caller
+        falls back to no BUYs and the absolute sell threshold.
+        """
+        comps = np.array([s for _, s, _ in all_scores], dtype=float)
+        comps = comps[np.isfinite(comps)]
+        if comps.size < _MIN_UNIVERSE_FOR_PERCENTILE:
+            return None, None
+        buy_cut = float(np.percentile(comps, self.buy_percentile))
+        sell_cut = float(np.percentile(comps, self.sell_percentile))
+        return buy_cut, sell_cut
+
+    @staticmethod
+    def _expected_annual_return(pct_rank: float) -> float:
+        """
+        Map a composite PERCENTILE RANK (0-1) to a 1-year expected excess
+        return, so that Signal.expected_return carries the same units as
+        holding_period_days=252.
+
+        Linear in rank around the median:
+            E[r_1y] = _EXPECTED_ANNUAL_SPREAD * (2 * rank - 1)
+        A top-decile name (rank ~0.95) is therefore worth ~7.2% over a year,
+        the median name 0%.  This replaces `(composite - 50)/100`, which read
+        a shrunken, uncalibrated 0-100 scale as if it were a percentage.
+        """
+        rank = float(np.clip(pct_rank, 0.0, 1.0))
+        return float(_EXPECTED_ANNUAL_SPREAD * (2.0 * rank - 1.0))
 
     # ------------------------------------------------------------------
     # Position sizing
@@ -342,11 +569,22 @@ class LongtermStrategy(BaseStrategy):
         risk_engine,
     ) -> float:
         """
-        Long-term position sizing: volatility-scaled equal weight.
+        Long-term position sizing: volatility-scaled equal weight, bounded by
+        the portfolio budget.
 
-        Each position targets an equal volatility contribution.
-        max_weight = 1/max_positions * health_multiplier, scaled by vol.
+        Uses the BATCH-NORMALISED weight stamped by generate_signals() so the
+        emitted set can never intend more than 100% of the sleeve (20 names at
+        the 10% per-position cap was 200% gross).  Un-stamped signals fall
+        back to the raw weight, hard-capped at MAX_GROSS_EXPOSURE /
+        max_positions.
+
+        Raises
+        ------
+        MockDataInLiveModeError : mock fundamentals outside paper mode.
+        RiskEngineError         : risk engine unavailable or raising.
         """
+        self._assert_data_source_safe("calculate_position_size")
+
         if available_capital <= 0 or not signal.is_valid():
             return 0.0
 
@@ -354,25 +592,32 @@ class LongtermStrategy(BaseStrategy):
         if multiplier == 0.0:
             return 0.0
 
+        stamped = signal.metadata.get("target_weight")
+        if stamped is not None:
+            target_weight = float(stamped)
+        else:
+            target_weight = min(
+                self._raw_target_weight(signal),
+                MAX_GROSS_EXPOSURE / max(1, self.max_positions),
+            )
+
+        size = available_capital * max(0.0, target_weight) * multiplier
+
+        if not self._risk_engine_approves(risk_engine, signal.symbol, size, "longterm"):
+            return 0.0
+
+        return max(0.0, size)
+
+    def _raw_target_weight(self, signal: Signal) -> float:
+        """Pre-normalisation vol-scaled weight (an intent, not an allocation)."""
         realized_vol = signal.feature_snapshot.get("realized_vol_63d", 0.25)
-        if realized_vol <= 0:
+        if realized_vol is None or not np.isfinite(realized_vol) or realized_vol <= 0:
             realized_vol = 0.25
 
         target_vol = 0.15  # 15% portfolio vol target
         target_weight = target_vol / (realized_vol * self.max_positions ** 0.5)
         target_weight = min(target_weight, 1.0 / self.max_positions * 2)
-        target_weight = max(target_weight, 0.02)
-
-        size = available_capital * target_weight * multiplier
-
-        try:
-            if hasattr(risk_engine, "approve_trade"):
-                if not risk_engine.approve_trade(signal.symbol, size, "longterm"):
-                    return 0.0
-        except Exception:
-            pass
-
-        return max(0.0, size)
+        return max(target_weight, 0.02)
 
     # ------------------------------------------------------------------
     # Exit logic
@@ -386,7 +631,13 @@ class LongtermStrategy(BaseStrategy):
         """
         Exit if:
         1. Stop-loss hit (wide stop for long-term: 3× ATR).
-        2. Fundamental deterioration: composite score < sell threshold.
+        2. Fundamental deterioration, measured cross-sectionally where
+           possible:
+             - current_data["composite_percentile"] (0-100) below
+               sell_percentile, else
+             - current_data["composite_score"] below the cut implied by the
+               last generate_signals() run, else
+             - the absolute sell_threshold fallback.
         3. Holding period > 2 years (force review).
         """
         current_price = float(current_data.get("price", 0))
@@ -395,14 +646,25 @@ class LongtermStrategy(BaseStrategy):
             return True
 
         # Fundamental deterioration check (if caller provides current score)
-        current_composite = current_data.get("composite_score")
-        if current_composite is not None and current_composite < self.sell_threshold:
+        current_pct = current_data.get("composite_percentile")
+        if current_pct is not None and float(current_pct) < self.sell_percentile:
             logger.info(
-                "Fundamental deterioration exit for %s (composite=%.1f).",
-                position["symbol"],
-                current_composite,
+                "Fundamental deterioration exit for %s (percentile=%.1f < p%.0f).",
+                position["symbol"], float(current_pct), self.sell_percentile,
             )
             return True
+
+        current_composite = current_data.get("composite_score")
+        if current_composite is not None:
+            cut = self._last_sell_cut
+            if cut is None:
+                cut = self.sell_threshold
+            if float(current_composite) < cut:
+                logger.info(
+                    "Fundamental deterioration exit for %s (composite=%.1f < %.1f).",
+                    position["symbol"], float(current_composite), cut,
+                )
+                return True
 
         # Time limit: 2 years
         entry_date = position.get("entry_date")

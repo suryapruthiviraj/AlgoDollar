@@ -26,7 +26,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -40,13 +40,18 @@ logger = logging.getLogger(__name__)
 _RF_ANNUAL = 0.065       # India 10-year G-Sec (risk-free for Sharpe)
 _RF_DAILY  = _RF_ANNUAL / 252
 
-# Slippage model
-_SLIPPAGE_LARGE_CAP = 0.0005   # 5 bps (0.05%) for large caps
-_SLIPPAGE_SMALL_CAP = 0.0015   # 15 bps (0.15%) for small caps
-_MAX_SLIPPAGE       = 0.001    # cap at 10 bps (half bid-ask spread estimate)
+# Slippage model (half-spread + impact estimate, per leg)
+_SLIPPAGE_LARGE_CAP = 0.0005   # 5 bps  for large caps
+_SLIPPAGE_SMALL_CAP = 0.0015   # 15 bps for small caps
+# Safety ceiling. MUST stay above _SLIPPAGE_SMALL_CAP, otherwise it silently
+# truncates the small-cap tier and every symbol is charged the same slippage.
+_MAX_SLIPPAGE       = 0.0050   # 50 bps hard ceiling
 
 # Maximum drawdown before the engine halts the backtest
 _MAX_DD_HALT = 0.50  # 50% drawdown → halt (configurable)
+
+# Fraction of bars that may throw before the whole backtest is declared invalid.
+_MAX_ERROR_RATE = 0.05
 
 
 # ---------------------------------------------------------------------------
@@ -140,9 +145,43 @@ class EventDrivenBacktester:
         self,
         cost_model=None,
         max_drawdown_halt: float = _MAX_DD_HALT,
+        product: str = "CNC",
+        exchange: str = "NSE",
+        large_cap_symbols: Optional[Iterable[str]] = None,
+        slippage_multiplier: float = 1.0,
+        whole_shares: bool = True,
     ):
+        """
+        Parameters
+        ----------
+        cost_model : ZerodhaCostModel or compatible.
+        max_drawdown_halt : float
+            Halt the simulation if portfolio drawdown exceeds this fraction.
+        product : {"CNC", "MIS"}
+            Zerodha product code. Determines the cost schedule: MIS (intraday)
+            pays capped brokerage and sell-side-only STT; CNC (delivery) pays
+            zero brokerage but STT on both legs plus DP charges on sells.
+            Using the wrong one misprices every trade in the backtest.
+        exchange : {"NSE", "BSE"}
+        large_cap_symbols : iterable of str, optional
+            Symbols priced at the tighter large-cap slippage tier. If omitted,
+            every symbol is treated as small-cap, which is the conservative
+            assumption.
+        slippage_multiplier : float
+            Scales base slippage. Used for degradation stress tests
+            (0.5x / 1x / 1.5x / 2x / 3x).
+        whole_shares : bool
+            If True (default), position quantities are floored to whole shares.
+            Indian equities cannot be traded fractionally; allowing fractional
+            quantities produces returns that are not attainable in practice.
+        """
         self._cost_model = cost_model
         self._max_dd_halt = max_drawdown_halt
+        self._product = product
+        self._exchange = exchange
+        self._large_cap_symbols = set(large_cap_symbols or ())
+        self._slippage_multiplier = float(slippage_multiplier)
+        self._whole_shares = whole_shares
 
     # ------------------------------------------------------------------
     # Main entry point
@@ -161,6 +200,9 @@ class EventDrivenBacktester:
         volume_df: Optional[pd.DataFrame] = None,
         nifty_df: Optional[pd.DataFrame] = None,
         params: Optional[dict] = None,
+        open_df: Optional[pd.DataFrame] = None,
+        high_df: Optional[pd.DataFrame] = None,
+        low_df: Optional[pd.DataFrame] = None,
     ) -> BacktestResult:
         """
         Run a full backtest.
@@ -207,6 +249,42 @@ class EventDrivenBacktester:
         positions: Dict[str, _Position] = {}
         equity_history: List[tuple[pd.Timestamp, float]] = []
         trade_records: List[TradeRecord] = []
+        feature_errors = 0
+        strategy_errors = 0
+        last_feature_error: Optional[Exception] = None
+        last_strategy_error: Optional[Exception] = None
+        halted_at: Optional[pd.Timestamp] = None
+
+        # ---- Pre-build per-symbol OHLCV frames once ----
+        # If true OHLC is not supplied, open/high/low are synthesized from
+        # close. That makes every intrabar range identically zero, so ATR and
+        # any high/low-based stop logic silently evaluate to 0. Warn loudly:
+        # this is a real limitation of the input data, not a detail.
+        synth_ohlc = high_df is None or low_df is None
+        if synth_ohlc:
+            logger.warning(
+                "No high/low data supplied — open/high/low are being "
+                "synthesized from close. Intrabar range is therefore zero, so "
+                "ATR-based features and intrabar stop detection will not "
+                "work. Pass high_df/low_df for realistic results."
+            )
+
+        full_market_data: Dict[str, pd.DataFrame] = {}
+        for sym in universe:
+            if sym not in prices_df.columns:
+                continue
+            close = prices_df[sym]
+            full_market_data[sym] = pd.DataFrame({
+                "open": open_df[sym] if open_df is not None and sym in open_df.columns else close,
+                "high": high_df[sym] if high_df is not None and sym in high_df.columns else close,
+                "low": low_df[sym] if low_df is not None and sym in low_df.columns else close,
+                "close": close,
+                "volume": (
+                    volume_df[sym]
+                    if volume_df is not None and sym in volume_df.columns
+                    else pd.Series(0.0, index=prices_df.index)
+                ),
+            })
 
         for bar_idx, current_date in enumerate(dates[:-1]):
             next_date = dates[bar_idx + 1]
@@ -233,6 +311,12 @@ class EventDrivenBacktester:
                     dd * 100,
                     current_date.date(),
                 )
+                # Liquidate at the NEXT bar, not at the end of the dataset.
+                # Falling through to the end-of-backtest liquidation would
+                # mark open positions out at a price potentially years in the
+                # future — a look-ahead that flatters (or distorts) precisely
+                # the scenario the halt exists to capture.
+                halted_at = next_date
                 break
 
             # ---- Check exits (using current bar T data) ----
@@ -303,25 +387,25 @@ class EventDrivenBacktester:
                     nifty_df.loc[:current_date] if nifty_df is not None else None,
                 )
             except Exception as exc:
-                logger.debug("features_fn error on %s: %s", current_date.date(), exc)
+                # Swallowing this silently produces a flat equity curve that
+                # looks like "the strategy chose not to trade" rather than
+                # "the feature pipeline is broken". Count it and fail the run
+                # if it is not a rare edge case.
+                feature_errors += 1
+                last_feature_error = exc
+                logger.warning(
+                    "features_fn failed on %s: %s", current_date.date(), exc
+                )
                 features_df = pd.DataFrame()
 
+            # Slice the pre-built per-symbol frames. Constructing a fresh
+            # DataFrame per symbol per bar (the previous behaviour) is
+            # O(bars x symbols) allocations each copying O(bars) of data,
+            # which made realistic backtests unusably slow.
+            n_rows = bar_idx + 1
             market_data = {
-                sym: prices_up_to_T[[sym]].rename(columns={sym: "close"})
-                for sym in universe
-                if sym in prices_up_to_T.columns
+                sym: df.iloc[:n_rows] for sym, df in full_market_data.items()
             }
-            # Add OHLCV structure where possible
-            for sym in universe:
-                if sym in prices_up_to_T.columns:
-                    market_data[sym] = pd.DataFrame({
-                        "close": prices_up_to_T[sym],
-                        "open":  prices_up_to_T[sym],
-                        "high":  prices_up_to_T[sym],
-                        "low":   prices_up_to_T[sym],
-                        "volume": volume_df[sym] if volume_df is not None and sym in volume_df.columns
-                                  else pd.Series(0, index=prices_up_to_T.index),
-                    })
 
             try:
                 signals = strategy.generate_signals(
@@ -333,7 +417,12 @@ class EventDrivenBacktester:
                                         if sym in prices_df.columns},
                 )
             except Exception as exc:
-                logger.debug("Strategy error on %s: %s", current_date.date(), exc)
+                strategy_errors += 1
+                last_strategy_error = exc
+                logger.warning(
+                    "strategy.generate_signals failed on %s: %s",
+                    current_date.date(), exc,
+                )
                 signals = []
 
             # ---- Execute entries at next bar open ----
@@ -351,22 +440,38 @@ class EventDrivenBacktester:
                 entry_px = prices_df.loc[next_date, signal.symbol]
                 entry_px = self._apply_slippage(entry_px, "BUY", signal.symbol)
 
-                size = strategy.calculate_position_size(signal, capital, risk_engine=None)
-                if size <= 0 or size > capital:
+                # Size against total portfolio value, not free cash. Sizing on
+                # cash alone shrinks every position as the book fills up, which
+                # systematically under-deploys and is not what the strategy's
+                # risk model intends.
+                size = strategy.calculate_position_size(
+                    signal, portfolio_value, risk_engine=None
+                )
+                if size <= 0:
                     continue
+                size = min(size, capital)
 
-                qty = size / entry_px if entry_px > 0 else 0
+                if entry_px <= 0:
+                    continue
+                qty = size / entry_px
+                if self._whole_shares:
+                    qty = float(int(qty))  # Indian equities are not fractionally tradable
                 if qty <= 0:
                     continue
 
                 cost_in = self._estimate_cost("BUY", qty, entry_px, cm)
                 total_outlay = qty * entry_px + cost_in
                 if total_outlay > capital:
-                    # Scale down to fit available capital
+                    # Scale down to fit available cash
                     qty = (capital * 0.99 - cost_in) / entry_px
+                    if self._whole_shares:
+                        qty = float(int(qty))
                     if qty <= 0:
                         continue
+                    cost_in = self._estimate_cost("BUY", qty, entry_px, cm)
                     total_outlay = qty * entry_px + cost_in
+                    if total_outlay > capital:
+                        continue
 
                 capital -= total_outlay
                 stop_price = entry_px * (1 - signal.stop_loss_pct)
@@ -384,8 +489,10 @@ class EventDrivenBacktester:
                     cost_in=cost_in,
                 )
 
-        # ---- Final bar: close all positions ----
-        final_date = dates[-1]
+        # ---- Liquidate remaining positions ----
+        # If the drawdown halt fired, close at the halt bar. Otherwise close
+        # at the last bar of the window.
+        final_date = halted_at if halted_at is not None else dates[-1]
         for sym, pos in list(positions.items()):
             if sym not in prices_df.columns:
                 continue
@@ -411,6 +518,24 @@ class EventDrivenBacktester:
                 holding_days=holding, exit_reason="end_of_backtest",
             ))
         equity_history.append((final_date, capital))
+
+        # ---- Fail loudly on systemic pipeline breakage ----
+        # A backtest that silently produced no signals because the feature
+        # pipeline threw on every bar must not be reported as a valid result.
+        n_bars = len(dates) - 1
+        if n_bars > 0:
+            if feature_errors / n_bars > _MAX_ERROR_RATE:
+                raise RuntimeError(
+                    f"features_fn failed on {feature_errors}/{n_bars} bars "
+                    f"({feature_errors / n_bars:.0%}). The backtest is invalid. "
+                    f"Last error: {last_feature_error!r}"
+                )
+            if strategy_errors / n_bars > _MAX_ERROR_RATE:
+                raise RuntimeError(
+                    f"strategy.generate_signals failed on {strategy_errors}/"
+                    f"{n_bars} bars ({strategy_errors / n_bars:.0%}). The "
+                    f"backtest is invalid. Last error: {last_strategy_error!r}"
+                )
 
         # ---- Build equity curve ----
         equity_curve = pd.Series(
@@ -548,52 +673,58 @@ class EventDrivenBacktester:
     # Slippage and cost helpers
     # ------------------------------------------------------------------
 
-    @staticmethod
     def _apply_slippage(
+        self,
         price: float,
         side: str,
         symbol: str,
-        large_cap_symbols: Optional[List[str]] = None,
     ) -> float:
         """
         Apply market-impact slippage to the execution price.
 
-        Slippage model:
-          - Large cap: 5 bps (estimated half bid-ask spread)
-          - Other:    15 bps
-          - Capped at 10 bps maximum
+        Base slippage (per leg):
+          - Large cap (in self._large_cap_symbols): 5 bps
+          - Everything else:                       15 bps
+
+        The result is scaled by self._slippage_multiplier, which exists so the
+        same strategy can be re-run at 0.5x / 1x / 1.5x / 2x / 3x slippage to
+        test whether its edge survives worse-than-expected execution. A
+        strategy that is only profitable at 1x is fragile and must be rejected.
 
         BUY:  price × (1 + slippage)
         SELL: price × (1 - slippage)
         """
-        slippage = (
+        base = (
             _SLIPPAGE_LARGE_CAP
-            if (large_cap_symbols and symbol in large_cap_symbols)
+            if symbol in self._large_cap_symbols
             else _SLIPPAGE_SMALL_CAP
         )
-        slippage = min(slippage, _MAX_SLIPPAGE)
+        slippage = min(base * self._slippage_multiplier, _MAX_SLIPPAGE)
         if side.upper() == "BUY":
             return price * (1 + slippage)
         return price * (1 - slippage)
 
-    @staticmethod
     def _estimate_cost(
+        self,
         side: str,
         qty: float,
         price: float,
         cost_model,
     ) -> float:
+        """
+        Transaction cost for one leg, via the shared ZerodhaCostModel.
+
+        `product` is taken from self._product rather than hardcoded: pricing an
+        intraday (MIS) strategy as delivery (CNC) overstates cost by roughly
+        2.5x per round trip and would reject viable intraday strategies.
+        """
         if cost_model is None:
-            # Flat 15 bps estimate
             return qty * price * 0.0015
-        try:
-            breakdown = cost_model.calculate_costs(
-                transaction_type=side,
-                qty=qty,
-                price=price,
-                exchange="NSE",
-                product="CNC",
-            )
-            return float(breakdown.total)
-        except Exception:
-            return qty * price * 0.0015
+        breakdown = cost_model.calculate_costs(
+            transaction_type=side,
+            qty=qty,
+            price=price,
+            exchange=self._exchange,
+            product=self._product,
+        )
+        return float(breakdown.total)

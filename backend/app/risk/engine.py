@@ -3,13 +3,41 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 import numpy as np
 import pandas as pd
 
 logger = logging.getLogger(__name__)
+
+# --------------------------------------------------------------------------- #
+#  Normal-distribution constants (exact to double precision).                   #
+#      Z_95   = scipy.stats.norm.ppf(0.95)                                      #
+#      PHI_Z95 = scipy.stats.norm.pdf(Z_95)                                     #
+#  Expected Shortfall for a normal distribution is                              #
+#      ES_alpha = sigma * phi(z_alpha) / (1 - alpha)                            #
+#  i.e. it scales SIGMA, *not* VaR. Multiplying VaR by phi(z)/(1-alpha) would   #
+#  double-count the z-score and overstate ES by a factor of z (~64%).           #
+# --------------------------------------------------------------------------- #
+Z_95: float = 1.6448536269514722
+PHI_Z95: float = 0.10313564037537139
+ES_SIGMA_MULTIPLIER_95: float = PHI_Z95 / 0.05          # ≈ 2.0627128
+ES_OVER_VAR_95: float = ES_SIGMA_MULTIPLIER_95 / Z_95   # ≈ 1.2540
+
+# Exposure below this (in ₹) is treated as "flat" — guards against exact float
+# equality tests on a hedged book that nets to ~1e-9 rather than exactly 0.
+_EXPOSURE_EPS: float = 1e-6
+
+
+class MissingPriceError(ValueError):
+    """Raised when a position's price is absent, non-finite or non-positive.
+
+    A missing price previously defaulted to 0.0, which made the position
+    invisible to risk (weight 0 despite real exposure) and, if *every* price
+    was missing, reported zero risk on a live book. Risk must never be
+    silently understated, so this is a hard error.
+    """
 
 
 @dataclass
@@ -19,8 +47,25 @@ class PortfolioRisk:
     portfolio_beta: float
     var_95: float                           # 1-day VaR at 95% confidence (₹)
     cvar_95: float                          # Expected Shortfall at 95% (₹)
-    marginal_risk: dict[str, float]         # symbol -> marginal risk contribution
-    sector_concentrations: dict[str, float]  # sector -> weight fraction
+    # symbol -> component risk contribution in ANNUALISED VOL UNITS.
+    # These sum to `portfolio_vol` (Euler decomposition), NOT to 1.0.
+    risk_contributions: dict[str, float]
+    # symbol -> component risk as a FRACTION of total risk. Sums to 1.0.
+    risk_contribution_pct: dict[str, float]
+    # sector -> signed exposure as a fraction of GROSS exposure.
+    sector_concentrations: dict[str, float]
+    gross_exposure: float = 0.0             # sum(|position value|) in ₹
+    net_exposure: float = 0.0               # sum(position value) in ₹
+
+    @property
+    def marginal_risk(self) -> dict[str, float]:
+        """Deprecated alias for :attr:`risk_contributions`.
+
+        Kept for backwards compatibility. Note that these are annualised-vol
+        units summing to ``portfolio_vol`` — use ``risk_contribution_pct`` if
+        you want percentages that sum to 1.0.
+        """
+        return self.risk_contributions
 
 
 @dataclass
@@ -52,11 +97,25 @@ class RiskEngine:
         Parameters
         ----------
         positions       : list of dicts with 'symbol' and 'quantity'
-        prices          : symbol -> last price
+        prices          : symbol -> last price (must be present, finite and > 0
+                          for every position, otherwise MissingPriceError)
         covariance_matrix : annualised covariance matrix (N x N), optional
         market_beta     : symbol -> beta vs Nifty, optional
         sector_map      : symbol -> sector name, optional
-        portfolio_value : total portfolio value for VaR scaling
+        portfolio_value : total portfolio value; used to scale VaR/CVaR only
+                          when gross exposure is ~0 (i.e. a flat book)
+
+        Notes
+        -----
+        Weights and ₹ risk figures are computed against **gross** exposure
+        ``sum(|quantity * price|)``, not net. A market-neutral long/short book
+        nets to ~0, and dividing by that produced absurd volatilities
+        (e.g. 1.26e6 annualised for a fully hedged pair).
+
+        Raises
+        ------
+        MissingPriceError
+            If any position's price is absent, non-finite or non-positive.
         """
         if not positions:
             return PortfolioRisk(
@@ -65,20 +124,52 @@ class RiskEngine:
                 portfolio_beta=1.0,
                 var_95=0.0,
                 cvar_95=0.0,
-                marginal_risk={},
+                risk_contributions={},
+                risk_contribution_pct={},
                 sector_concentrations={},
+                gross_exposure=0.0,
+                net_exposure=0.0,
             )
 
         symbols = [p["symbol"] for p in positions]
         quantities = np.array([p.get("quantity", 0) for p in positions], dtype=float)
-        price_arr = np.array([prices.get(s, 0.0) for s in symbols], dtype=float)
+
+        # --- price validation: never default a missing price to zero ---------
+        missing = [s for s in symbols if s not in prices]
+        if missing:
+            raise MissingPriceError(
+                f"No price supplied for {sorted(set(missing))}; refusing to "
+                f"compute risk with zero-weighted live exposure."
+            )
+        price_arr = np.array([prices[s] for s in symbols], dtype=float)
+        bad = [
+            s for s, px in zip(symbols, price_arr)
+            if not np.isfinite(px) or px <= 0.0
+        ]
+        if bad:
+            raise MissingPriceError(
+                f"Invalid (non-finite or non-positive) price for "
+                f"{sorted(set(bad))}; refusing to compute risk."
+            )
+        if not np.all(np.isfinite(quantities)):
+            raise ValueError("Position quantities must be finite.")
 
         values = quantities * price_arr
-        total_value = values.sum()
-        if total_value == 0:
-            total_value = max(portfolio_value, 1.0)
+        net_exposure = float(values.sum())
+        gross_exposure = float(np.abs(values).sum())
 
-        weights = values / total_value  # fractional weights
+        # Gross exposure is the correct risk denominator: it is invariant to
+        # long/short netting and is only ~0 when the book is genuinely flat.
+        if gross_exposure <= _EXPOSURE_EPS:
+            logger.warning(
+                "Gross exposure is ~0 (₹%.2e); falling back to portfolio_value "
+                "for risk scaling.", gross_exposure,
+            )
+            risk_base = max(portfolio_value, 1.0)
+        else:
+            risk_base = gross_exposure
+
+        weights = values / risk_base  # signed weights; sum(|w|) == 1 when gross>0
 
         # --- covariance and portfolio variance -------------------------
         n = len(symbols)
@@ -102,30 +193,35 @@ class RiskEngine:
 
         # --- VaR / CVaR (parametric, normal) ---------------------------
         daily_vol = portfolio_vol / np.sqrt(trading_days_per_year)
-        # 1-day 95% VaR
-        z_95 = 1.6449
-        var_95 = float(daily_vol * z_95 * total_value)
-        # CVaR ≈ var * phi(z) / (1 - conf) for normal distribution
-        # phi(1.6449) ≈ 0.1031, (1-0.95) = 0.05
-        cvar_95 = float(var_95 * 0.1031 / 0.05)
+        daily_sigma_rupees = daily_vol * risk_base
+        # 1-day 95% VaR = sigma * z
+        var_95 = float(daily_sigma_rupees * Z_95)
+        # 1-day 95% Expected Shortfall = SIGMA * phi(z) / (1 - conf).
+        # The multiplier applies to sigma, not to VaR (see module constants).
+        cvar_95 = float(daily_sigma_rupees * ES_SIGMA_MULTIPLIER_95)
 
-        # --- marginal risk per position --------------------------------
-        # marginal_risk_i = (Sigma @ w)_i / portfolio_vol
+        # --- risk contributions per position ---------------------------
+        # Euler decomposition: RC_i = w_i * (Sigma @ w)_i / portfolio_vol,
+        # which sums to portfolio_vol (annualised vol units, NOT percentages).
         if portfolio_vol > 0:
             sigma_w = cov @ weights
-            marginal = sigma_w / portfolio_vol
-            component_risk = weights * marginal  # % contribution
+            marginal = sigma_w / portfolio_vol   # dSigma_p / dw_i
+            component_risk = weights * marginal  # annualised vol units
+            component_pct = component_risk / portfolio_vol  # sums to 1.0
         else:
             component_risk = np.zeros(n)
-        marginal_risk = {s: float(component_risk[i]) for i, s in enumerate(symbols)}
+            component_pct = np.zeros(n)
+        risk_contributions = {s: float(component_risk[i]) for i, s in enumerate(symbols)}
+        risk_contribution_pct = {s: float(component_pct[i]) for i, s in enumerate(symbols)}
 
         # --- sector concentrations -------------------------------------
+        # Signed sector exposure as a fraction of GROSS exposure.
         sector_values: dict[str, float] = {}
         if sector_map:
             for sym, val in zip(symbols, values):
                 sector = sector_map.get(sym, "Unknown")
                 sector_values[sector] = sector_values.get(sector, 0.0) + val
-        sector_concentrations = {s: v / total_value for s, v in sector_values.items()}
+        sector_concentrations = {s: v / risk_base for s, v in sector_values.items()}
 
         return PortfolioRisk(
             portfolio_variance=portfolio_variance,
@@ -133,8 +229,11 @@ class RiskEngine:
             portfolio_beta=portfolio_beta,
             var_95=var_95,
             cvar_95=cvar_95,
-            marginal_risk=marginal_risk,
+            risk_contributions=risk_contributions,
+            risk_contribution_pct=risk_contribution_pct,
             sector_concentrations=sector_concentrations,
+            gross_exposure=gross_exposure,
+            net_exposure=net_exposure,
         )
 
     # ------------------------------------------------------------------ #
@@ -158,6 +257,11 @@ class RiskEngine:
 
         Returns size in ₹ (may be zero if stop distance is negligible).
         """
+        # NaN fails every comparison, so guard it explicitly before the
+        # `<= 0` test (otherwise NaN slips through and yields a NaN size).
+        if not np.isfinite(signal_price) or not np.isfinite(stop_price) or not np.isfinite(capital):
+            logger.warning("Non-finite input to position sizing; returning 0.")
+            return 0.0
         if signal_price <= 0 or stop_price <= 0:
             return 0.0
 

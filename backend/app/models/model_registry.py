@@ -20,7 +20,7 @@ from typing import Dict, List, Optional
 import joblib
 import pandas as pd
 
-from backend.app.models.ml_models import AlphaModelBase  # type: ignore
+from app.models.ml_models import AlphaModelBase  # type: ignore
 
 logger = logging.getLogger(__name__)
 

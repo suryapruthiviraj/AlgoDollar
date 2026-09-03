@@ -13,34 +13,73 @@ Design goals
 from __future__ import annotations
 
 import logging
-from datetime import datetime, time, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from datetime import datetime, time
+from typing import Any, Dict, List, Optional
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
 
-from backend.app.strategies.base import (
-    BaseStrategy, PerformanceMetrics, Signal, SignalDirection, StrategyHealth
+from app.strategies.base import (
+    INTRADAY_ROUND_TRIP_COST, MAX_GROSS_EXPOSURE,
+    BaseStrategy, Signal, SignalDirection,
 )
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Intraday constants
+# Time zone
+# ---------------------------------------------------------------------------
+# Every session decision in this module is made in EXCHANGE time, never in the
+# host's local time.  On a UTC server (the norm for cloud deployment) naive
+# datetime.now() made IST 11:00 look like 05:30 ("opening window", blocked)
+# and IST 15:20 look like 09:50 (past square-off, yet treated as tradeable):
+# the strategy was muted through the real session, allowed to open positions
+# after the 14:45 cutoff, and NEVER squared off — carrying an intraday book
+# overnight at intraday leverage.
+IST = ZoneInfo("Asia/Kolkata")
+
+# ---------------------------------------------------------------------------
+# Intraday constants (all IST wall-clock)
 # ---------------------------------------------------------------------------
 
 _IST_MARKET_OPEN  = time(9, 15)
 _IST_MARKET_CLOSE = time(15, 30)
+_OPENING_GRACE_END = time(9, 30)   # No new signals in the first 15 minutes
 _SIGNAL_CUTOFF    = time(14, 45)   # No new positions after this time
 _SQUARE_OFF_TIME  = time(15, 15)   # Force-exit all intraday positions
 
-# Minimum required edge AFTER brokerage + slippage to generate a signal.
-# 0.003 = 30 basis points round-trip net edge
+# Estimated ROUND-TRIP transaction cost for an intraday (MIS) trade, as a
+# fraction of trade value.  Reconciled with app.backtesting.costs:
+#   ZerodhaCostModel().breakeven_return(qty, px, product="MIS") returns
+#   4.5-10.7 bps round trip (brokerage is ₹20-capped, so the percentage falls
+#   as the ticket grows) — call it ~8 bps — plus ~5 bps of slippage per leg.
+# The old 0.0015 constant contradicted its own "≈ 25 bps" comment and, more
+# importantly, understated the hurdle it was compared against.
+_COST_ESTIMATE_INTRADAY = INTRADAY_ROUND_TRIP_COST  # ~18 bps
+
+# Minimum required edge AFTER costs to generate a signal.
+# 0.003 = 30 basis points of NET edge on top of the cost hurdle.
 _MIN_NET_EDGE = 0.003
 
-# Estimated round-trip transaction cost (brokerage + STT + slippage)
-# for an intraday trade as a fraction of trade value.
-_COST_ESTIMATE_INTRADAY = 0.0015  # 15 bps brokerage + 5 bps STT + ~5 bps slippage ≈ 25 bps
+# Fraction of a recent intraday move that is expected to persist over the
+# holding window.  Intraday momentum is weak and mean-reverting at the margin;
+# assuming a move repeats in full is not a forecast, it is an extrapolation.
+_CONTINUATION_COEF = 0.25
+
+# Weights on the (dimensionally homogeneous) RETURN components of the edge.
+# These sum to 1.0 so the blend stays in return units.
+_W_MOM15   = 0.45
+_W_ORB     = 0.30
+_W_MOM5    = 0.15
+_W_VWAP_MR = 0.10
+
+# Relative volume enters as a dimensionless CONFIDENCE MULTIPLIER, never as
+# an additive return term.  Bounded so a volume spike can modulate — but never
+# manufacture — an expected return.
+_VOL_CONF_MIN = 0.50
+_VOL_CONF_MAX = 1.25
+_VOL_CONF_SLOPE = 0.25
 
 # Market breadth filter: if fewer than this fraction of universe stocks are
 # positive on the day, reduce long bias.
@@ -49,10 +88,50 @@ _BREADTH_THRESHOLD = 0.40
 # Maximum concurrent intraday positions
 _MAX_POSITIONS = 5
 
+# Per-position notional cap as a fraction of sleeve capital.
+_MAX_POSITION_PCT = 0.20
+
 # Rolling windows for intraday features (in bars; assumes 1-minute bars)
 _SHORT_BARS  = 5
 _MED_BARS    = 15
 _LONG_BARS   = 30
+
+
+class NaiveDatetimeError(ValueError):
+    """
+    Raised when a timestamp used for a SESSION decision is timezone-naive.
+
+    A naive timestamp is unusable here: it is only correct if the host happens
+    to be in IST, which is exactly the assumption that broke square-off on UTC
+    servers.  Callers must pass an aware datetime; this module never guesses.
+    """
+
+
+def to_ist(ts: datetime, field: str = "timestamp") -> datetime:
+    """
+    Convert an AWARE datetime to IST.  Raises on a naive datetime.
+
+    This is the single door through which every session-time decision passes.
+    """
+    if not isinstance(ts, datetime):
+        raise NaiveDatetimeError(
+            f"{field} must be a timezone-aware datetime, got "
+            f"{type(ts).__name__}: a bare time carries no zone and cannot be "
+            "resolved to an exchange session time."
+        )
+    if ts.tzinfo is None or ts.utcoffset() is None:
+        raise NaiveDatetimeError(
+            f"{field} is timezone-naive ({ts!r}).  Session decisions must use "
+            "an aware datetime — pass datetime.now(IST) or attach a tzinfo. "
+            "Assuming the host's local zone silently breaks square-off on any "
+            "non-IST (e.g. UTC) server."
+        )
+    return ts.astimezone(IST)
+
+
+def now_ist() -> datetime:
+    """Current exchange time.  Correct on a host in any time zone."""
+    return datetime.now(IST)
 
 
 class IntradayStrategy(BaseStrategy):
@@ -92,12 +171,25 @@ class IntradayStrategy(BaseStrategy):
         max_positions: int = _MAX_POSITIONS,
         long_only: bool = True,
         min_intraday_volume: int = 1_000_000,
+        cost_estimate: float = _COST_ESTIMATE_INTRADAY,
     ):
+        """
+        Parameters
+        ----------
+        min_net_edge : float
+            Net edge (expected return minus cost, as a fraction of notional)
+            required to emit a signal.
+        cost_estimate : float
+            Round-trip cost hurdle as a fraction of notional.  Defaults to
+            ~18 bps, reconciled with ZerodhaCostModel MIS costs plus slippage.
+            Inject the real per-ticket number when it is known.
+        """
         super().__init__(paper_mode=paper_mode)
         self.min_net_edge = min_net_edge
         self.max_positions = max_positions
         self.long_only = long_only
         self.min_intraday_volume = min_intraday_volume
+        self.cost_estimate = float(cost_estimate)
 
     # ------------------------------------------------------------------
     # Core signal generation
@@ -120,7 +212,9 @@ class IntradayStrategy(BaseStrategy):
         universe : list[str]
         features_df : pd.DataFrame, daily features (for context).
         market_data : dict[str, pd.DataFrame], daily OHLCV per symbol.
-        current_time : datetime (IST), defaults to now.
+        current_time : timezone-AWARE datetime, defaults to now in IST.
+            Converted to IST internally; a naive datetime raises
+            NaiveDatetimeError rather than being assumed to be exchange time.
         intraday_data : dict[str, pd.DataFrame], intraday 1-minute bars per symbol.
             Each DataFrame has columns: time, open, high, low, close, volume.
         existing_positions : dict[str, dict], currently open positions.
@@ -133,15 +227,19 @@ class IntradayStrategy(BaseStrategy):
             logger.info("IntradayStrategy is %s; no signals generated.", self.health)
             return []
 
-        now = current_time or datetime.now()
+        # All session gating happens in IST, whatever the host's clock is set to.
+        now = to_ist(current_time, "current_time") if current_time is not None else now_ist()
         now_time = now.time()
 
         # Time gate: no signals in first 15 minutes or after cutoff
-        if now_time < time(9, 30):  # 9:15 + 15 min grace
-            logger.debug("Within 15-min opening window; no signals.")
+        if now_time < _OPENING_GRACE_END:  # 9:15 + 15 min grace
+            logger.debug("Within 15-min opening window (%s IST); no signals.", now_time)
             return []
         if now_time >= _SIGNAL_CUTOFF:
-            logger.debug("Past signal cutoff %s; no new signals.", _SIGNAL_CUTOFF)
+            logger.debug(
+                "Past signal cutoff %s IST (now %s IST); no new signals.",
+                _SIGNAL_CUTOFF, now_time,
+            )
             return []
 
         if intraday_data is None:
@@ -186,11 +284,22 @@ class IntradayStrategy(BaseStrategy):
         candidate_signals.sort(key=lambda s: s.edge_score, reverse=True)
         selected = candidate_signals[:available_slots]
 
+        # Portfolio budget across the emitted set (per-position caps alone do
+        # not bound gross exposure).
+        budget = self._entry_budget(self.max_positions, len(existing_syms))
+        self._stamp_target_weights(
+            selected,
+            [self._raw_target_weight(s) for s in selected],
+            budget=budget,
+        )
+
         logger.info(
-            "IntradayStrategy: %d candidates → %d signals (breadth=%.1f%%)",
+            "IntradayStrategy: %d candidates → %d signals (breadth=%.1f%%, "
+            "gross intent %.1f%% of sleeve)",
             len(candidate_signals),
             len(selected),
             breadth * 100,
+            sum(s.metadata.get("target_weight", 0.0) for s in selected) * 100,
         )
         return selected
 
@@ -205,13 +314,16 @@ class IntradayStrategy(BaseStrategy):
         risk_engine,
     ) -> float:
         """
-        Volatility-adjusted position sizing for intraday.
+        Volatility-adjusted position sizing for intraday, bounded by the
+        portfolio budget.
 
-        Size = min(
-            available_capital * max_position_pct,
-            risk_per_trade / stop_loss_pct
-        )
-        where risk_per_trade = available_capital * 0.005 (0.5% per trade).
+        Raw weight = min(0.5% risk / stop_loss_pct, 20% of capital); the batch
+        normalisation stamped by generate_signals() then guarantees the
+        emitted set never intends more than the sleeve's remaining budget.
+
+        Raises
+        ------
+        RiskEngineError : if a supplied risk engine cannot approve the trade.
         """
         if available_capital <= 0 or not signal.is_valid():
             return 0.0
@@ -220,24 +332,34 @@ class IntradayStrategy(BaseStrategy):
         if multiplier == 0.0:
             return 0.0
 
-        risk_per_trade = available_capital * 0.005  # 0.5% capital at risk per trade
-        stop_loss = signal.stop_loss_pct
-        if stop_loss <= 0:
+        stamped = signal.metadata.get("target_weight")
+        if stamped is not None:
+            target_weight = float(stamped)
+        else:
+            target_weight = min(
+                self._raw_target_weight(signal),
+                MAX_GROSS_EXPOSURE / max(1, self.max_positions),
+            )
+        if target_weight <= 0:
             return 0.0
 
-        size_by_risk = risk_per_trade / stop_loss
-        max_size = available_capital * 0.20  # max 20% per trade
-        size = min(size_by_risk, max_size) * multiplier
+        size = available_capital * target_weight * multiplier
 
-        # Risk engine check
-        try:
-            if hasattr(risk_engine, "approve_trade"):
-                if not risk_engine.approve_trade(signal.symbol, size, "intraday"):
-                    return 0.0
-        except Exception:
-            pass
+        if not self._risk_engine_approves(risk_engine, signal.symbol, size, "intraday"):
+            return 0.0
 
         return max(0.0, size)
+
+    def _raw_target_weight(self, signal: Signal) -> float:
+        """
+        Pre-normalisation weight: 0.5% of capital at risk per trade, capped at
+        _MAX_POSITION_PCT of the sleeve.
+        """
+        stop_loss = signal.stop_loss_pct
+        if stop_loss is None or not np.isfinite(stop_loss) or stop_loss <= 0:
+            return 0.0
+        weight_by_risk = 0.005 / stop_loss  # 0.5% capital at risk per trade
+        return float(min(weight_by_risk, _MAX_POSITION_PCT))
 
     # ------------------------------------------------------------------
     # Exit logic
@@ -252,25 +374,34 @@ class IntradayStrategy(BaseStrategy):
         Exit intraday position if:
         1. Stop-loss hit.
         2. Target hit.
-        3. Time-based exit: current_time >= 15:15 IST.
+        3. Time-based exit: current_time >= 15:15 IST (evaluated in IST, so it
+           fires correctly on a UTC host: 09:45 UTC == 15:15 IST).
         4. Momentum reversal: price crosses back through VWAP.
 
         Parameters
         ----------
         position : dict with keys: symbol, entry_price, direction,
                    stop_loss, target, entry_time.
-        current_data : dict with keys: price, time (datetime), vwap (optional).
+        current_data : dict with keys: price, time (timezone-AWARE datetime),
+                       vwap (optional).
+
+        Raises
+        ------
+        NaiveDatetimeError : if current_data["time"] is naive.  Square-off is
+            the last line of defence against carrying an intraday book
+            overnight; guessing a zone here is not acceptable.
         """
         current_price = float(current_data.get("price", 0))
         current_time = current_data.get("time")
 
-        # 1. Time-based square-off
+        # 1. Time-based square-off (in IST, whatever the host clock says)
         if current_time is not None:
-            t = current_time.time() if hasattr(current_time, "time") else current_time
-            if t >= _SQUARE_OFF_TIME:
-                logger.debug(
-                    "Squaring off %s at %s (time-based exit).",
+            ist_now = to_ist(current_time, 'current_data["time"]')
+            if ist_now.time() >= _SQUARE_OFF_TIME:
+                logger.info(
+                    "Squaring off %s at %s IST (time-based exit; source ts %s).",
                     position["symbol"],
+                    ist_now.time(),
                     current_time,
                 )
                 return True
@@ -346,8 +477,8 @@ class IntradayStrategy(BaseStrategy):
         current_vol = volume.iloc[-1]
         rel_vol = (current_vol / avg_vol_20) if avg_vol_20 > 0 else 1.0
 
-        # ---- Opening range breakout (first 30 min = first 30 bars for 1-min) ----
-        first_30 = idf.iloc[:30]
+        # ---- Opening range breakout (first 30 min of THIS session) ----
+        first_30 = self._session_frame(idf).iloc[:30]
         or_high = first_30["high"].max() if len(first_30) > 0 else last_price
         or_low  = first_30["low"].min()  if len(first_30) > 0 else last_price
         orb_signal = 0.0
@@ -356,17 +487,48 @@ class IntradayStrategy(BaseStrategy):
         elif last_price < or_low:
             orb_signal = (last_price - or_low) / or_low  # negative
 
-        # ---- Edge score: weighted composite ----
-        # Higher score = more bullish momentum with volume confirmation
-        edge_raw = (
-            0.30 * np.sign(mom_15) * abs(mom_15)
-            + 0.25 * np.sign(orb_signal) * abs(orb_signal) * 0.5
-            + 0.20 * (rel_vol - 1.0) * 0.01  # scaled
-            + 0.15 * (-vwap_dist) * 0.5     # below VWAP = potential mean-reversion
-            + 0.10 * np.sign(mom_5) * abs(mom_5)
+        # ---- Expected return: a RETURN, built only from return terms ----
+        #
+        # Every term below is a price return (dimensionless fraction of
+        # price), so the weighted blend is a return and can legitimately be
+        # compared against a cost, which is also a fraction of notional.
+        # The blend is then shrunk by _CONTINUATION_COEF, because only part of
+        # a recent move persists.
+        #
+        # Relative volume is DELIBERATELY absent from this sum.  It used to
+        # enter as `0.20 * (rel_vol - 1.0) * 0.01`, converting a dimensionless
+        # ratio into return units via an arbitrary constant: with zero price
+        # movement and rel_vol=6.9 that alone manufactured a 1.18% "expected
+        # return" and a tradeable signal out of nothing but a volume spike.
+        directional_return = (
+            _W_MOM15 * mom_15
+            + _W_ORB * orb_signal
+            + _W_MOM5 * mom_5
+            + _W_VWAP_MR * (-vwap_dist)  # below VWAP = mean-reversion pull up
         )
+        expected_move = _CONTINUATION_COEF * directional_return
 
-        direction = SignalDirection.LONG if edge_raw > 0 else SignalDirection.SHORT
+        # Volume informs CONFIDENCE only: a dimensionless multiplier bounded
+        # away from zero and from inflation.  It can scale a real expected
+        # move up or down; it can never create one.
+        volume_confidence = float(np.clip(
+            1.0 + _VOL_CONF_SLOPE * (rel_vol - 1.0),
+            _VOL_CONF_MIN,
+            _VOL_CONF_MAX,
+        ))
+        expected_return_signed = expected_move * volume_confidence
+
+        if expected_return_signed == 0.0:
+            # No directional information at all.  Under the old formula this
+            # case still produced a signal, because the volume term supplied a
+            # non-zero "return" on its own.
+            logger.debug("%s: zero expected move; no signal.", sym)
+            return None
+
+        direction = (
+            SignalDirection.LONG if expected_return_signed > 0
+            else SignalDirection.SHORT
+        )
 
         # Suppress short signals if long_only or breadth is poor
         if self.long_only and direction == SignalDirection.SHORT:
@@ -374,9 +536,10 @@ class IntradayStrategy(BaseStrategy):
         if not long_allowed and direction == SignalDirection.LONG:
             return None
 
-        # Net edge = edge_raw - cost estimate
-        expected_return = abs(edge_raw)
-        net_edge = expected_return - _COST_ESTIMATE_INTRADAY
+        # Net edge = |expected return| - round-trip cost.  Both are fractions
+        # of notional, so this subtraction is dimensionally valid.
+        expected_return = abs(expected_return_signed)
+        net_edge = expected_return - self.cost_estimate
 
         # ---- Stop / target ----
         atr_approx = (high - low).tail(14).mean() / last_price
@@ -390,7 +553,9 @@ class IntradayStrategy(BaseStrategy):
             "mom_30": mom_30,
             "rel_vol": rel_vol,
             "orb_signal": orb_signal,
-            "edge_raw": edge_raw,
+            "directional_return": float(directional_return),
+            "volume_confidence": volume_confidence,
+            "expected_return_signed": float(expected_return_signed),
         }
 
         return Signal(
@@ -401,20 +566,74 @@ class IntradayStrategy(BaseStrategy):
             signal_date=now,
             edge_score=net_edge,
             expected_return=expected_return,
-            expected_return_std=abs(expected_return) * 0.5,
+            # Dispersion of the intraday move itself (ATR-scaled), not a
+            # fraction of the point estimate.
+            expected_return_std=float(max(atr_approx, 1e-6)),
             stop_loss_pct=stop_loss_pct,
             target_pct=target_pct,
             holding_period_days=0,  # intraday
             feature_snapshot=feature_snapshot,
+            metadata={
+                "return_units": "simple_return_over_intraday_holding_window",
+                "cost_estimate": self.cost_estimate,
+                "session_date": now.date().isoformat(),
+            },
         )
 
     @staticmethod
+    def _session_frame(idf: pd.DataFrame) -> pd.DataFrame:
+        """
+        Bars belonging to the CURRENT SESSION only.
+
+        The caller may pass a rolling window or several days of bars, so
+        `idf.iloc[0]` is not the session open and `idf.iloc[:30]` is not the
+        opening range.  Bars are grouped by their own date and the last date's
+        bars are returned.  With no usable timestamps the frame is returned
+        unchanged (and the caller's fallback is documented as approximate).
+        """
+        if idf is None or idf.empty:
+            return idf
+
+        stamps = None
+        if "time" in idf.columns:
+            stamps = pd.to_datetime(idf["time"], errors="coerce")
+        elif isinstance(idf.index, pd.DatetimeIndex):
+            stamps = pd.Series(idf.index)
+
+        if stamps is not None and stamps.notna().any():
+            try:
+                dates = stamps.dt.date.to_numpy()
+                mask = dates == dates[-1]
+                if mask.any():
+                    return idf.loc[mask]
+            except (AttributeError, TypeError, ValueError):
+                pass
+
+        logger.debug(
+            "Intraday frame has no usable timestamps; treating the whole "
+            "frame as one session."
+        )
+        return idf
+
+    @classmethod
+    def _session_open_price(cls, idf: pd.DataFrame) -> Optional[float]:
+        """Open of the current session (see _session_frame)."""
+        if idf is None or idf.empty or "open" not in idf.columns:
+            return None
+        session = cls._session_frame(idf)
+        if session is None or session.empty:
+            return None
+        return float(session["open"].iloc[0])
+
+    @classmethod
     def _compute_breadth(
+        cls,
         universe: List[str],
         intraday_data: Dict[str, pd.DataFrame],
     ) -> float:
         """
-        Fraction of universe stocks with positive return from open.
+        Fraction of universe stocks with positive return from the SESSION
+        OPEN.
 
         Uses ONLY intraday data available at the current time.
         """
@@ -424,9 +643,9 @@ class IntradayStrategy(BaseStrategy):
             idf = intraday_data.get(sym)
             if idf is None or len(idf) < 2:
                 continue
-            open_px = idf["open"].iloc[0]
+            open_px = cls._session_open_price(idf)
             last_px = idf["close"].iloc[-1]
-            if open_px > 0:
+            if open_px is not None and open_px > 0:
                 total += 1
                 if last_px > open_px:
                     positive += 1

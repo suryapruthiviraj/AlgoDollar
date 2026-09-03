@@ -11,7 +11,7 @@ Adds:
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from typing import List, Optional
@@ -21,33 +21,7 @@ import pandas as pd
 
 # Re-export from risk.regime if it exists; otherwise define local stubs so
 # this module is usable stand-alone during development.
-try:
-    from backend.app.risk.regime import MarketRegime, RegimeDetector  # type: ignore
-except ImportError:
-    try:
-        from app.risk.regime import MarketRegime, RegimeDetector  # type: ignore
-    except ImportError:
-        # ------- local fallback stubs -------
-        class MarketRegime(str, Enum):  # type: ignore
-            BULL = "BULL"
-            BEAR = "BEAR"
-            SIDEWAYS = "SIDEWAYS"
-            PANIC = "PANIC"
-
-        class RegimeDetector:  # type: ignore
-            """Stub RegimeDetector — replace with real implementation from risk.regime."""
-
-            def detect(self, nifty_close: pd.Series) -> MarketRegime:
-                """Simple 200-day SMA rule as baseline."""
-                if len(nifty_close) < 10:
-                    return MarketRegime.SIDEWAYS
-                last = nifty_close.iloc[-1]
-                sma200 = nifty_close.tail(200).mean()
-                if last > sma200 * 1.05:
-                    return MarketRegime.BULL
-                elif last < sma200 * 0.90:
-                    return MarketRegime.BEAR
-                return MarketRegime.SIDEWAYS
+from app.risk.regime import MarketRegime, RegimeDetector
 
 logger = logging.getLogger(__name__)
 
@@ -181,21 +155,73 @@ class CombinedRegime:
             self.label = f"{self.price_regime.value}_{self.vol_regime.value}_VOL"
 
 
-# Regime → recommended max equity fraction
+# Regime → recommended max equity fraction.
+#
+# CALIBRATION STATUS: UNCALIBRATED PRIORS.
+# These values are hand-chosen monotone priors (more equity in calmer, more
+# bullish states) and have NOT been estimated from data. They must be either
+# validated or replaced before they influence live capital. See
+# docs/AUDIT_REPORT.md "Uncalibrated parameters".
 _EQUITY_CAP: dict[tuple, float] = {
-    (MarketRegime.BULL, VolatilityRegime.LOW):    1.00,
-    (MarketRegime.BULL, VolatilityRegime.MEDIUM): 0.90,
-    (MarketRegime.BULL, VolatilityRegime.HIGH):   0.75,
-    (MarketRegime.SIDEWAYS, VolatilityRegime.LOW):    0.75,
-    (MarketRegime.SIDEWAYS, VolatilityRegime.MEDIUM): 0.60,
-    (MarketRegime.SIDEWAYS, VolatilityRegime.HIGH):   0.45,
-    (MarketRegime.BEAR, VolatilityRegime.LOW):    0.50,
-    (MarketRegime.BEAR, VolatilityRegime.MEDIUM): 0.35,
-    (MarketRegime.BEAR, VolatilityRegime.HIGH):   0.20,
-    (MarketRegime.PANIC, VolatilityRegime.LOW):    0.30,
-    (MarketRegime.PANIC, VolatilityRegime.MEDIUM): 0.15,
-    (MarketRegime.PANIC, VolatilityRegime.HIGH):   0.05,
+    (MarketRegime.STRONG_BULL, VolatilityRegime.LOW):    1.00,
+    (MarketRegime.STRONG_BULL, VolatilityRegime.MEDIUM): 0.90,
+    (MarketRegime.STRONG_BULL, VolatilityRegime.HIGH):   0.75,
+    (MarketRegime.WEAK_BULL, VolatilityRegime.LOW):      0.85,
+    (MarketRegime.WEAK_BULL, VolatilityRegime.MEDIUM):   0.75,
+    (MarketRegime.WEAK_BULL, VolatilityRegime.HIGH):     0.60,
+    (MarketRegime.RECOVERY, VolatilityRegime.LOW):       0.80,
+    (MarketRegime.RECOVERY, VolatilityRegime.MEDIUM):    0.65,
+    (MarketRegime.RECOVERY, VolatilityRegime.HIGH):      0.50,
+    (MarketRegime.SIDEWAYS, VolatilityRegime.LOW):       0.75,
+    (MarketRegime.SIDEWAYS, VolatilityRegime.MEDIUM):    0.60,
+    (MarketRegime.SIDEWAYS, VolatilityRegime.HIGH):      0.45,
+    (MarketRegime.HIGH_VOL, VolatilityRegime.LOW):       0.55,
+    (MarketRegime.HIGH_VOL, VolatilityRegime.MEDIUM):    0.40,
+    (MarketRegime.HIGH_VOL, VolatilityRegime.HIGH):      0.25,
+    (MarketRegime.WEAK_BEAR, VolatilityRegime.LOW):      0.55,
+    (MarketRegime.WEAK_BEAR, VolatilityRegime.MEDIUM):   0.40,
+    (MarketRegime.WEAK_BEAR, VolatilityRegime.HIGH):     0.25,
+    (MarketRegime.STRONG_BEAR, VolatilityRegime.LOW):    0.50,
+    (MarketRegime.STRONG_BEAR, VolatilityRegime.MEDIUM): 0.35,
+    (MarketRegime.STRONG_BEAR, VolatilityRegime.HIGH):   0.20,
+    (MarketRegime.PANIC, VolatilityRegime.LOW):          0.30,
+    (MarketRegime.PANIC, VolatilityRegime.MEDIUM):       0.15,
+    (MarketRegime.PANIC, VolatilityRegime.HIGH):         0.05,
 }
+
+# Fail at import time if the table ever drifts from the two enums.
+_missing_caps = {
+    (m, v) for m in MarketRegime for v in VolatilityRegime
+} - set(_EQUITY_CAP)
+if _missing_caps:
+    raise RuntimeError(
+        "_EQUITY_CAP is missing entries: "
+        f"{sorted((m.value, v.value) for m, v in _missing_caps)}"
+    )
+del _missing_caps
+
+
+def equity_cap(
+    price_regime: MarketRegime, vol_regime: VolatilityRegime
+) -> float:
+    """
+    Recommended maximum equity fraction for a (price regime, vol regime) pair.
+
+    Raises KeyError on an unknown combination rather than defaulting to 0.50:
+    a silent default hides vocabulary drift, which is exactly how regime
+    detection stopped influencing allocation in the first place.
+    """
+    if not isinstance(price_regime, MarketRegime):
+        raise KeyError(
+            f"Unknown price regime {price_regime!r}; expected a MarketRegime "
+            f"member ({[r.value for r in MarketRegime]})"
+        )
+    if not isinstance(vol_regime, VolatilityRegime):
+        raise KeyError(
+            f"Unknown volatility regime {vol_regime!r}; expected a "
+            f"VolatilityRegime member ({[r.value for r in VolatilityRegime]})"
+        )
+    return _EQUITY_CAP[(price_regime, vol_regime)]
 
 
 class CombinedRegimeModel:
@@ -224,12 +250,12 @@ class CombinedRegimeModel:
         -------
         CombinedRegime
         """
-        price_regime = self._price_detector.detect(nifty_close)
+        price_regime = self._price_detector.detect_regime(nifty_close)
         vol_regime = self._vol_model.classify_current(nifty_close)
         if vol_regime is None:
             vol_regime = VolatilityRegime.MEDIUM
 
-        cap = _EQUITY_CAP.get((price_regime, vol_regime), 0.50)
+        cap = equity_cap(price_regime, vol_regime)
         return CombinedRegime(
             price_regime=price_regime,
             vol_regime=vol_regime,
@@ -249,14 +275,14 @@ class CombinedRegimeModel:
         vol_series = self._vol_model.classify_series(nifty_close)
         records = []
         for i, t in enumerate(nifty_close.index):
-            price_regime = self._price_detector.detect(nifty_close.iloc[: i + 1])
+            price_regime = self._price_detector.detect_regime(nifty_close.iloc[: i + 1])
             vol_regime = vol_series.iloc[i]
             if pd.isna(vol_regime):
                 vol_regime = VolatilityRegime.MEDIUM
             cr = CombinedRegime(
                 price_regime=price_regime,
                 vol_regime=vol_regime,
-                equity_fraction_cap=_EQUITY_CAP.get((price_regime, vol_regime), 0.50),
+                equity_fraction_cap=equity_cap(price_regime, vol_regime),
             )
             records.append({
                 "date": t,
