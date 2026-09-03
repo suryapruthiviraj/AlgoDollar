@@ -1,0 +1,114 @@
+# ── Secrets & credentials ─────────────────────────────────────────────────────
+.env
+*.env
+.env.*
+!.env.example
+secrets/
+credentials.json
+private_key.pem
+*.p8
+*.p12
+*.pfx
+token.json
+access_token.txt
+kite_token.txt
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+ENV/
+env/
+.Python
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg
+MANIFEST
+pip-log.txt
+pip-delete-this-directory.txt
+
+# ── Test & coverage ───────────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+.coverage.*
+coverage/
+coverage.xml
+htmlcov/
+nosetests.xml
+*.cover
+*.py,cover
+
+# ── Type checking & linting ───────────────────────────────────────────────────
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.ruff_cache/
+.pytype/
+
+# ── Node / Next.js ────────────────────────────────────────────────────────────
+node_modules/
+.next/
+out/
+.nuxt/
+.cache/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+package-lock.json.bak
+
+# ── Databases ─────────────────────────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+*.db-shm
+*.db-wal
+
+# ── Celery ────────────────────────────────────────────────────────────────────
+celerybeat-schedule
+celerybeat.pid
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+logs/
+*.log
+*.log.*
+
+# ── macOS ─────────────────────────────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# ── IDEs ──────────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+*.sublime-workspace
+
+# ── Docker ────────────────────────────────────────────────────────────────────
+.docker/
+
+# ── Miscellaneous ─────────────────────────────────────────────────────────────
+.hypothesis/
+*.pyo
+*.pyd
+Thumbs.db
