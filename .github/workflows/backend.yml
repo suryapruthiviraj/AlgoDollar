@@ -78,6 +78,7 @@ jobs:
             backend/requirements.txt
 
       - name: Install dependencies
+        id: install
         working-directory: backend
         run: |
           python -m pip install --upgrade pip
@@ -86,15 +87,22 @@ jobs:
           # environment and failing later in a confusing place.
           pip install -e ".[test]"
 
+      # Lint, types and tests are independent of each other. Running each of
+      # them whenever the install succeeded — rather than stopping at the first
+      # failure — means one push reports everything that is wrong instead of
+      # one thing per push. Every step still fails the job on its own.
       - name: Run ruff linter
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         working-directory: backend
         run: ruff check app
 
       - name: Run mypy type checker
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         working-directory: backend
         run: mypy app
 
       - name: Run pytest with coverage
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         working-directory: backend
         run: |
           pytest \

@@ -184,7 +184,12 @@ jobs:
           # turn a failing audit into a pass.
           exit $audit_status
 
+      # Runs even when the Python audit above failed: two independent scanners
+      # should not hide each other's findings, and letting a pip-audit failure
+      # skip this one would leave the Node dependencies unreported. This step
+      # still fails the job on its own.
       - name: Audit Node.js dependencies
+        if: ${{ !cancelled() }}
         working-directory: frontend
         run: |
           if [ ! -f package-lock.json ]; then

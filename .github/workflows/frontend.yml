@@ -67,6 +67,7 @@ jobs:
           node-version: "22"
 
       - name: Install dependencies
+        id: install
         working-directory: frontend
         run: |
           if [ -f package-lock.json ]; then
@@ -92,7 +93,12 @@ jobs:
       # see in the diff proves nothing. eslint-config-next is already a
       # devDependency, so committing frontend/.eslintrc.json containing
       # {"extends": "next/core-web-vitals"} is all this needs.
+      # Lint, type-check and build are independent given a successful install,
+      # so each runs on its own rather than stopping the job at the first
+      # failure. One push then reports everything that is wrong.
       - name: Verify an ESLint configuration is committed
+        id: eslint_config
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         working-directory: frontend
         run: |
           config=""
@@ -108,15 +114,20 @@ jobs:
           fi
           echo "Using ESLint configuration: frontend/$config"
 
+      # Gated on the preflight, not just the install: without a config file
+      # `next lint` blocks on an interactive prompt rather than failing.
       - name: Run ESLint
+        if: ${{ !cancelled() && steps.eslint_config.outcome == 'success' }}
         working-directory: frontend
         run: npm run lint
 
       - name: Type-check with tsc
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         working-directory: frontend
         run: npx --no-install tsc --noEmit
 
       - name: Build Next.js application
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         working-directory: frontend
         env:
           # Inlined into the client bundle at build time, so it must be a URL a
