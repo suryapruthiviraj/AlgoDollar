@@ -144,8 +144,12 @@ jobs:
           name: nextjs-build
           # .next/cache is a local build cache, not part of the output, and is
           # by far the largest thing in .next/.
+          # `frontend/.next/**`, not `frontend/.next/`. upload-artifact matches
+          # FILES via glob; a bare directory path combined with a `!` exclusion
+          # resolves to an empty set, so this failed with "No files were found"
+          # even though the build had succeeded and emitted all 19 routes.
           path: |
-            frontend/.next/
-            !frontend/.next/cache/
+            frontend/.next/**
+            !frontend/.next/cache/**
           retention-days: 3
           if-no-files-found: error

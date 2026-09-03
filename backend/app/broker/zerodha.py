@@ -7,7 +7,7 @@ import logging
 import time
 from collections import deque
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 import pandas as pd
 import pytz
@@ -81,14 +81,39 @@ class ZerodhaBroker(BrokerInterface):
         self._api_key = api_key
         self._api_secret = api_secret
         self._access_token = access_token
-        self._kite = None          # KiteConnect instance
-        self._kws = None           # KiteTicker instance
+        # kiteconnect ships no type information, so the SDK objects are Any.
+        # They stay Optional because they only exist after connect() /
+        # exchange_token(): every use must go through _require_kite().
+        self._kite: Optional[Any] = None          # KiteConnect instance
+        self._kws: Optional[Any] = None           # KiteTicker instance
         self._connected = False
         self._last_ticks: dict[str, dict] = {}
         self._tick_timestamps: dict[str, float] = {}
         self._instruments: dict[tuple[str, str], int] = {}   # (symbol, exchange) -> token
         self._order_rl = _RateLimiter(_RATE_LIMIT_ORDERS)
         self._data_rl = _RateLimiter(_RATE_LIMIT_DATA)
+
+    def _require_kite(self) -> Any:
+        """
+        Return the live KiteConnect handle, or refuse to act without one.
+
+        Every account, market-data and order method below reached straight
+        through ``self._kite``, which is ``None`` until ``connect()`` or
+        ``exchange_token()`` has run. Calling any of them on an unconnected
+        broker raised ``AttributeError: 'NoneType' object has no attribute
+        'positions'`` from deep inside the adapter — an error no caller in
+        this codebase handles and which reads like a bug in the SDK rather
+        than "you are not logged in". BrokerConnectionError is the domain
+        error the rest of the platform (including main.py's exception
+        handler) already understands.
+        """
+        if self._kite is None:
+            raise BrokerConnectionError(
+                "ZerodhaBroker has no active KiteConnect session. Call "
+                "connect() (with an access_token) or exchange_token() before "
+                "using the broker API."
+            )
+        return self._kite
 
     # ------------------------------------------------------------------ #
     #  Lifecycle                                                           #
@@ -190,7 +215,7 @@ class ZerodhaBroker(BrokerInterface):
         loop = asyncio.get_event_loop()
         try:
             instruments = await loop.run_in_executor(
-                None, self._kite.instruments
+                None, self._require_kite().instruments
             )
             self._instruments = {
                 (i["tradingsymbol"], i["exchange"]): i["instrument_token"]
@@ -319,11 +344,11 @@ class ZerodhaBroker(BrokerInterface):
 
     async def get_profile(self) -> dict:
         await self._data_rl.acquire()
-        return await self._call_kite(self._kite.profile)
+        return await self._call_kite(self._require_kite().profile)
 
     async def get_holdings(self) -> list[dict]:
         await self._data_rl.acquire()
-        return await self._call_kite(self._kite.holdings)
+        return await self._call_kite(self._require_kite().holdings)
 
     async def get_positions(self) -> list[dict]:
         """
@@ -340,7 +365,7 @@ class ZerodhaBroker(BrokerInterface):
         it raises.
         """
         await self._data_rl.acquire()
-        pos = await self._call_kite(self._kite.positions)
+        pos = await self._call_kite(self._require_kite().positions)
 
         if not isinstance(pos, dict):
             raise BrokerConnectionError(
@@ -362,15 +387,15 @@ class ZerodhaBroker(BrokerInterface):
 
     async def get_orders(self) -> list[dict]:
         await self._data_rl.acquire()
-        return await self._call_kite(self._kite.orders)
+        return await self._call_kite(self._require_kite().orders)
 
     async def get_trades(self) -> list[dict]:
         await self._data_rl.acquire()
-        return await self._call_kite(self._kite.trades)
+        return await self._call_kite(self._require_kite().trades)
 
     async def get_funds(self) -> dict:
         await self._data_rl.acquire()
-        raw = await self._call_kite(self._kite.margins)
+        raw = await self._call_kite(self._require_kite().margins)
         equity = raw.get("equity", {})
         return {
             "cash": equity.get("available", {}).get("cash", 0.0),
@@ -384,7 +409,7 @@ class ZerodhaBroker(BrokerInterface):
 
     async def get_quote(self, symbols: list[str]) -> dict[str, dict]:
         await self._data_rl.acquire()
-        raw = await self._call_kite(self._kite.quote, symbols)
+        raw = await self._call_kite(self._require_kite().quote, symbols)
         result: dict[str, dict] = {}
         for key, data in raw.items():
             result[key] = {
@@ -409,7 +434,7 @@ class ZerodhaBroker(BrokerInterface):
         await self._data_rl.acquire()
         token = self.instrument_token(symbol, exchange)
         raw = await self._call_kite(
-            self._kite.historical_data,
+            self._require_kite().historical_data,
             token,
             from_date,
             to_date,
@@ -458,8 +483,9 @@ class ZerodhaBroker(BrokerInterface):
                 f"not stop out where the strategy intended."
             )
 
+        kite = self._require_kite()
         kwargs: dict = dict(
-            variety=self._kite.VARIETY_REGULAR,
+            variety=kite.VARIETY_REGULAR,
             exchange=exchange,
             tradingsymbol=symbol,
             transaction_type=_KITE_TXN_MAP[txn_type],
@@ -476,7 +502,7 @@ class ZerodhaBroker(BrokerInterface):
             kwargs["trigger_price"] = trigger_price
 
         order_id = await self._call_kite(
-            self._kite.place_order, idempotent=False, **kwargs
+            kite.place_order, idempotent=False, **kwargs
         )
         logger.info(
             "Order placed: %s %s %s x%d @ %.2f → order_id=%s",
@@ -487,9 +513,12 @@ class ZerodhaBroker(BrokerInterface):
     async def cancel_order(self, order_id: str) -> bool:
         await self._order_rl.acquire()
         try:
+            # Resolved inside the try so that "not connected" is reported the
+            # same way every other cancel failure is: logged, returns False.
+            kite = self._require_kite()
             await self._call_kite(
-                self._kite.cancel_order, idempotent=False,
-                variety=self._kite.VARIETY_REGULAR,
+                kite.cancel_order, idempotent=False,
+                variety=kite.VARIETY_REGULAR,
                 order_id=order_id,
             )
             logger.info("Order cancelled: %s", order_id)
@@ -525,7 +554,9 @@ class ZerodhaBroker(BrokerInterface):
 
     async def get_order_status(self, order_id: str) -> dict:
         await self._data_rl.acquire()
-        history = await self._call_kite(self._kite.order_history, order_id=order_id)
+        history = await self._call_kite(
+            self._require_kite().order_history, order_id=order_id
+        )
         # most recent entry
         return history[-1] if history else {}
 

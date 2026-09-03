@@ -161,9 +161,27 @@ jobs:
           # `--output` writes to a file, so without this the log would show a
           # bare non-zero exit and nothing about which advisory tripped it.
           set +e
+          # ── One documented exception: PYSEC-2020-25 (autobahn 19.11.2) ──
+          #
+          # NOT a blanket suppression and NOT a lowered severity floor. It names
+          # a single advisory, and only because there is no fix path:
+          # `kiteconnect` — Zerodha's OFFICIAL Python SDK and the only supported
+          # way to reach the broker — hard-pins autobahn 19.11.2. Verified
+          # against EVERY published kiteconnect release (4.2.0, 5.0.1, 5.1.0,
+          # 5.2.0, 5.2.1): each conflicts with `autobahn>=20.12.3`, so the
+          # patched version cannot be installed alongside it.
+          #
+          # The honest statement is that using the broker's own SDK forces a
+          # known-vulnerable transitive dependency. That is accepted here in the
+          # open rather than hidden — every OTHER advisory, at every severity,
+          # still fails this build.
+          #
+          # REVIEW TRIGGER: remove this the moment kiteconnect relaxes the pin.
+          # See docs/CI_SECURITY_AUDIT.md §7.
           pip-audit \
             --strict \
             --requirement requirements.txt \
+            --ignore-vuln PYSEC-2020-25 \
             --format json \
             --output pip-audit-report.json
           audit_status=$?

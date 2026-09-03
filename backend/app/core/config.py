@@ -28,7 +28,16 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
 
     # ── Application ───────────────────────────────────────────────────────────
-    app_env: Literal["development", "staging", "paper", "live"] = "development"
+    # "test" is included because CI sets APP_ENV=test. Without it, Settings
+    # raised a pydantic literal_error at import time and the ENTIRE backend
+    # test job aborted with exit 2 before collecting a single test.
+    #
+    # This is APP_ENV — environment labelling only. It is NOT TRADING_MODE,
+    # which independently gates paper vs live and still accepts only "paper"
+    # or "live". Adding "test" here cannot enable live trading.
+    app_env: Literal[
+        "development", "test", "staging", "paper", "live"
+    ] = "development"
 
     # ── Auth ──────────────────────────────────────────────────────────────────
     secret_key: str = "change-me-in-production-at-least-32-chars-long"
