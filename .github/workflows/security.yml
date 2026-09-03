@@ -176,9 +176,12 @@ jobs:
               | . as $d
               | .vulns[]
               | "::error::\($d.name) \($d.version): \(.id) — fixed in \((.fix_versions // []) | join(", ") | if . == "" then "no fixed version published" else . end)"
-            ' pip-audit-report.json || true
+            ' pip-audit-report.json | sort -u \
+              || echo "::warning::could not render pip-audit-report.json; see the artifact attached to this run."
           fi
 
+          # pip-audit's own exit status decides this step. Nothing above can
+          # turn a failing audit into a pass.
           exit $audit_status
 
       - name: Audit Node.js dependencies
@@ -265,9 +268,12 @@ jobs:
             jq -r '
               .results[]?
               | "::error file=backend/\(.filename),line=\(.line_number)::[\(.test_id)] \(.issue_severity)/\(.issue_confidence) — \(.issue_text)"
-            ' bandit-report.json || true
+            ' bandit-report.json \
+              || echo "::warning::could not render bandit-report.json; see the artifact attached to this run."
           fi
 
+          # Bandit's own exit status decides this step. Nothing above can turn a
+          # finding into a pass.
           exit $bandit_status
 
       - name: Upload Bandit report

@@ -45,7 +45,7 @@ updates:
       day: "monday"
       time: "07:00"
       timezone: "Etc/UTC"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
     commit-message:
       prefix: "deps"
       prefix-development: "deps-dev"
@@ -83,7 +83,7 @@ updates:
       day: "monday"
       time: "07:00"
       timezone: "Etc/UTC"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
     commit-message:
       prefix: "deps"
       prefix-development: "deps-dev"

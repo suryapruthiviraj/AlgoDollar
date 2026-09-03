@@ -81,6 +81,33 @@ jobs:
             npm install --legacy-peer-deps --no-audit --no-fund
           fi
 
+      # `next lint` does not fail cleanly when no ESLint configuration exists —
+      # it opens an interactive "How would you like to configure ESLint?" menu,
+      # which on a runner paints a prompt into the log and exits 1 with no
+      # explanation of what went wrong. frontend/ currently has no .eslintrc*
+      # and no eslint.config.*, so name the missing thing instead.
+      #
+      # CI deliberately does NOT generate a config on the fly (`next lint
+      # --strict` would): linting against rules nobody reviewed and nobody can
+      # see in the diff proves nothing. eslint-config-next is already a
+      # devDependency, so committing frontend/.eslintrc.json containing
+      # {"extends": "next/core-web-vitals"} is all this needs.
+      - name: Verify an ESLint configuration is committed
+        working-directory: frontend
+        run: |
+          config=""
+          for f in .eslintrc .eslintrc.js .eslintrc.cjs .eslintrc.mjs \
+                   .eslintrc.json .eslintrc.yml .eslintrc.yaml \
+                   eslint.config.js eslint.config.mjs eslint.config.cjs \
+                   eslint.config.ts; do
+            if [ -f "$f" ]; then config="$f"; break; fi
+          done
+          if [ -z "$config" ]; then
+            echo "::error file=frontend/package.json::frontend/ has no ESLint configuration, so \`npm run lint\` (next lint) cannot run non-interactively. Commit frontend/.eslintrc.json with {\"extends\": \"next/core-web-vitals\"} — eslint-config-next is already a devDependency."
+            exit 1
+          fi
+          echo "Using ESLint configuration: frontend/$config"
+
       - name: Run ESLint
         working-directory: frontend
         run: npm run lint
@@ -99,7 +126,9 @@ jobs:
 
       - name: Upload build artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: ${{ !cancelled() }}
+        # Only on success: .next/ does not exist if the build failed, and a
+        # second "no files were found" error there would just bury the real one.
+        if: success()
         with:
           name: nextjs-build
           # .next/cache is a local build cache, not part of the output, and is
