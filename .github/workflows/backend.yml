@@ -48,7 +48,12 @@ jobs:
     env:
       DATABASE_URL: postgresql+asyncpg://algodollar:algodollar_password@localhost:5432/algodollar_test
       REDIS_URL: redis://localhost:6379/0
-      APP_ENV: test
+      # Must be one of app/core/config.py's Literal values — "test" is not one
+      # of them, and importing app.core.config with APP_ENV=test raised
+      # ValidationError, which collected as an error in two test modules.
+      # "development" is the non-production value; CI must never set "live",
+      # and "paper"/"staging" would claim a trading posture CI does not have.
+      APP_ENV: development
       SECRET_KEY: ci-test-secret-key-at-least-32-characters-long
       ALGORITHM: HS256
       ACCESS_TOKEN_EXPIRE_MINUTES: 60
