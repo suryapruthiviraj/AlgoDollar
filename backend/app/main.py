@@ -91,6 +91,45 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as exc:
         log.warning("redis_unavailable", error=str(exc))
 
+    # ── Execution stack + startup reconciliation ──────────────────────────
+    #
+    # The execution layer used to be unreachable: nothing outside
+    # app/execution and app/broker imported either package, reconcile() was
+    # never called, and the eligibility gate was enforced nowhere. It is wired
+    # here so there is exactly one place an order can originate.
+    #
+    # Reconciliation runs BEFORE trading is permitted. If it does not reach
+    # RECONCILIATION_OK the service is still constructed but its trading gate
+    # stays closed, so every attempt produces an audited rejection rather than
+    # an unhandled error somewhere upstream.
+    app.state.execution_stack = None
+    try:
+        from app.execution.bootstrap import build_execution_stack
+
+        stack = await build_execution_stack()
+        app.state.execution_stack = stack
+        app.state.execution_service = stack.service
+
+        if stack.trading_permitted:
+            log.info("execution_stack_ready", trading_permitted=True)
+        else:
+            log.error(
+                "execution_stack_blocked",
+                trading_permitted=False,
+                reason=stack.startup_reason,
+                detail="Orders will be rejected until reconciliation succeeds.",
+            )
+    except Exception as exc:
+        # Failing to build the execution stack must NOT leave a half-configured
+        # object behind that might later be mistaken for a working one.
+        app.state.execution_stack = None
+        app.state.execution_service = None
+        log.error(
+            "execution_stack_unavailable",
+            error=str(exc),
+            detail="Trading is unavailable. The API will serve read-only data.",
+        )
+
     log.info("algodollar_started")
     yield
 

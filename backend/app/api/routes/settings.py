@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Optional
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -163,12 +163,58 @@ async def update_settings(
 @router.post("/kill-switch", response_model=KillSwitchResponse)
 async def toggle_kill_switch(
     body: KillSwitchRequest,
+    request: Request,
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
 ) -> KillSwitchResponse:
     us = await _get_or_create_settings(current_user.id, session)
     us.kill_switch_active = body.activate
     await session.flush()
+
+    # ── Mirror into the execution layer's store ───────────────────────────
+    #
+    # The application had TWO unconnected kill switches: this database flag,
+    # and the `kill_switch` key that `ExecutionSafety` reads and
+    # `ReconciliationEngine` writes. Pressing the button here did not stop the
+    # execution layer. One user action must reach both, or the control does not
+    # do what its name says.
+    #
+    # An ACTIVATION that fails to reach the store is an ERROR, not a warning:
+    # the user has been told trading is halted, so returning success while the
+    # execution layer is still armed is the worst possible outcome. Release is
+    # treated more leniently — failing to release leaves the system SAFER.
+    store_synced = False
+    store_error: Optional[str] = None
+    stack = getattr(request.app.state, "execution_stack", None)
+    store = getattr(stack, "kill_switch_store", None)
+
+    if store is None:
+        store_error = "execution layer is not running; only the database flag was set"
+    else:
+        try:
+            if body.activate:
+                store.set("kill_switch", "1")
+                store.set("kill_switch_reason", body.reason or "activated via API")
+            else:
+                store.delete("kill_switch")
+            store_synced = True
+        except Exception as exc:
+            store_error = f"could not update the execution kill-switch store: {exc!r}"
+
+    if body.activate and not store_synced:
+        logger.error(
+            "kill_switch_activation_not_propagated",
+            user_id=current_user.id,
+            error=store_error,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                f"Kill switch could NOT be propagated to the execution layer "
+                f"({store_error}). The database flag was set, but do not assume "
+                f"trading is halted. Resolve this before relying on it."
+            ),
+        )
 
     severity = "critical" if body.activate else "info"
     action_verb = "activated" if body.activate else "deactivated"
@@ -186,6 +232,7 @@ async def toggle_kill_switch(
         user_id=current_user.id,
         activated=body.activate,
         reason=body.reason,
+        execution_store_synced=store_synced,
     )
 
     msg = (
@@ -193,6 +240,8 @@ async def toggle_kill_switch(
         if body.activate
         else "Kill switch DEACTIVATED. Trading may resume."
     )
+    if store_error and not body.activate:
+        msg += f" (note: {store_error})"
     return KillSwitchResponse(kill_switch_active=body.activate, message=msg)
 
 

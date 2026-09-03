@@ -454,8 +454,9 @@ def probe_survivorship(provider, control: str = "RELIANCE") -> Finding:
             f"{len(KNOWN_DELISTED_PROBES)} known-delisted names returned no data "
             f"over periods when they were listed ({', '.join(missing)}), "
             f"while the control {control} returned full history. Backtests on "
-            f"this source are biased UPWARD: a positive result is "
-            f"uninterpretable; a negative result is robust.",
+            f"this source measure a filtered sample. The bias direction on "
+            f"EXCESS return is INDETERMINATE and signal-dependent, so results "
+            f"establish true historical performance in NEITHER direction.",
             {"missing": missing, "present": present},
         )
 

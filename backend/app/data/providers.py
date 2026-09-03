@@ -24,14 +24,24 @@ do. These are not implementation gaps; they are properties of the data:
 
    The dataset keeps the survivors and discards the failures. Any universe
    assembled from currently-listed tickers therefore excludes precisely the
-   worst outcomes, and every backtest run on it is biased UPWARD.
+   worst outcomes.
 
-   The practical consequence for research is asymmetric and worth stating
-   plainly:
-     - A POSITIVE result on this data is uninterpretable. It cannot be
-       distinguished from the bias.
-     - A NEGATIVE result is robust. A strategy that fails even when the
-       losers have been removed from the sample has genuinely failed.
+   THE DIRECTION OF THIS BIAS IS NOT DETERMINATE. It inflates the ABSOLUTE
+   return of a long-only book, because the companies that went to zero are
+   missing. But research here measures EXCESS return against a benchmark
+   drawn from the same filtered universe, and the bias does not cleanly
+   survive that subtraction.
+
+   For some signals it plausibly runs the other way. A company heading for
+   delisting has collapsing momentum long before it disappears, so a momentum
+   rule would have ranked it in the bottom quintile and avoided it while an
+   equal-weight benchmark held it all the way down. Deleting such companies
+   removes episodes where the signal was RIGHT, biasing its measured excess
+   return DOWNWARD.
+
+   The defensible statement is therefore: this dataset cannot establish true
+   historical performance in EITHER direction. Results computed on it are
+   measurements of this sample, not estimates of the strategy.
 
 2. NO POINT-IN-TIME INDEX CONSTITUENTS.
    There is no way to ask "what was in the NIFTY 100 in March 2013?". Using
@@ -163,8 +173,11 @@ NSE_LARGE_MID_CAP: tuple[str, ...] = (
 _BIAS_NOTES = [
     "SURVIVORSHIP: delisted securities are absent from the source. Verified — "
     "SATYAMCOMP, DHFL and VIDEOIND return zero rows over periods when they "
-    "were actively listed. Results are biased UPWARD; a positive result is "
-    "uninterpretable, a negative result is robust.",
+    "were actively listed. The bias direction on EXCESS return is "
+    "INDETERMINATE and signal-dependent (a momentum rule would have avoided "
+    "the deleted names, so removing them can bias its excess return DOWN). "
+    "This dataset cannot establish true historical performance in either "
+    "direction.",
     "NO POINT-IN-TIME UNIVERSE: membership is as of today, which selects "
     "companies for having become large. This is itself a look-ahead.",
     "NO POINT-IN-TIME FUNDAMENTALS: no statement values with publication "

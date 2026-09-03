@@ -1,0 +1,132 @@
+name: Safety Gates
+
+# WHY THIS WORKFLOW EXISTS SEPARATELY FROM backend.yml
+#
+# The main backend workflow runs `pytest` over the whole suite. That is not
+# sufficient here: a suite can go green while the execution-safety tests are
+# absent, skipped, or quietly deleted, and nothing would notice. This platform
+# places real orders, so the checks that prevent it from doing so unsafely get
+# their own job with their own explicit assertions.
+#
+# This workflow deliberately asserts things that are TRUE TODAY and must stay
+# true — most importantly that live trading is BLOCKED. If someone makes the
+# system claim LIVE_ELIGIBLE, this job fails and demands they justify it.
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  safety-gates:
+    name: Execution safety and live-trading eligibility
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[test]" || pip install -r requirements.txt
+          pip install pytest pytest-asyncio
+
+      # The safety suites must EXIST. A deleted safety test must break the
+      # build rather than silently reducing coverage.
+      - name: Assert safety test suites are present
+        working-directory: backend
+        run: |
+          missing=0
+          for f in \
+            tests/test_execution_safety_audit.py \
+            tests/test_order_lifecycle.py \
+            tests/test_paper_broker.py \
+            tests/test_reconciliation_recovery.py \
+            tests/test_safety_invariants.py \
+            tests/test_eligibility.py
+          do
+            if [ ! -f "$f" ]; then
+              echo "::error::required safety suite missing: $f"
+              missing=1
+            fi
+          done
+          exit $missing
+
+      - name: Run execution safety suites
+        working-directory: backend
+        run: |
+          python -m pytest \
+            tests/test_execution_safety_audit.py \
+            tests/test_order_lifecycle.py \
+            tests/test_paper_broker.py \
+            tests/test_reconciliation_recovery.py \
+            tests/test_safety_invariants.py \
+            tests/test_eligibility.py \
+            -q --no-header
+
+      # Intraday session logic previously had a naive-datetime bug that, on a
+      # UTC host, would have carried an intraday book overnight. CI runners are
+      # UTC, which makes this the natural place to catch a regression.
+      - name: Run session/timezone tests under UTC
+        working-directory: backend
+        env:
+          TZ: UTC
+        run: |
+          python -m pytest tests/ -q --no-header -k "timezone or squareoff or session or ist"
+
+      - name: Assert trading mode defaults to paper
+        working-directory: backend
+        run: |
+          python - <<'PY'
+          import sys
+          sys.path.insert(0, ".")
+          from app.core.config import settings
+          if settings.trading_mode != "paper":
+              print(f"::error::TRADING_MODE is {settings.trading_mode!r}, expected 'paper'")
+              sys.exit(1)
+          print("TRADING_MODE=paper")
+          PY
+
+      # The default must remain BLOCKED. If this assertion ever needs changing,
+      # that change should be visible in a diff and argued for in review.
+      - name: Assert live trading is BLOCKED
+        working-directory: backend
+        run: |
+          python - <<'PY'
+          import sys
+          sys.path.insert(0, ".")
+          from app.governance.eligibility import (
+              gather_repo_evidence, assess_live_trading_eligibility,
+          )
+          rep = assess_live_trading_eligibility(gather_repo_evidence())
+          n_pass = sum(1 for r in rep.results if r.passed)
+          print(f"{rep.state.value} ({n_pass}/{len(rep.results)} gates passing)")
+          if rep.permits_live_trading:
+              print("::error::eligibility reports LIVE_ELIGIBLE. This must be "
+                    "reviewed explicitly — CI will not approve it automatically.")
+              sys.exit(1)
+          PY
+
+      - name: Assert no secrets are tracked
+        run: |
+          bad=0
+          for f in .env credentials.json kite_token.txt access_token.txt; do
+            if git ls-files --error-unmatch "$f" >/dev/null 2>&1; then
+              echo "::error::$f is tracked in git"
+              bad=1
+            fi
+          done
+          if git ls-files | grep -qE '\.(pem|p8|p12|pfx|key)$'; then
+            echo "::error::key material is tracked in git"
+            git ls-files | grep -E '\.(pem|p8|p12|pfx|key)$'
+            bad=1
+          fi
+          exit $bad

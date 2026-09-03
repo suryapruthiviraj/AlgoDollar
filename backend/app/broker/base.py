@@ -140,9 +140,28 @@ class BrokerInterface(abc.ABC):
         order_type: OrderType,
         product: Product,
         tag: str = "",
+        trigger_price: Optional[float] = None,
     ) -> str:
         """
         Place an order.
+
+        Parameters
+        ----------
+        price : float
+            Limit price. Ignored for MARKET and SL-M orders.
+        trigger_price : float, optional
+            Stop trigger. REQUIRED for SL and SL-M.
+
+            This is a separate parameter rather than an overload of `price`
+            because the two brokers disagreed about the convention: the paper
+            broker treated `price` as the trigger, while Kite requires both a
+            limit price and a distinct `trigger_price` for SL. A stop tested in
+            paper would therefore have behaved differently live — the most
+            dangerous class of simulation mismatch, since it only shows up when
+            the stop is actually needed.
+
+            Implementations that cannot carry a trigger must RAISE for SL/SL-M
+            rather than silently substituting `price`.
 
         Returns
         -------

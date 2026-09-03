@@ -4,7 +4,7 @@ from datetime import date, datetime, timezone
 from typing import Optional
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Path
+from fastapi import APIRouter, Depends, HTTPException, Path, Request
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -46,11 +46,27 @@ class ExecuteRequest(BaseModel):
     allocation_id: int
 
 
+class OrderOutcome(BaseModel):
+    """Per-order result. `submitted` is true only if a broker received it."""
+    symbol: Optional[str] = None
+    submitted: bool
+    outcome: str
+    broker_order_id: Optional[str] = None
+    reason: Optional[str] = None
+
+
 class ExecuteResponse(BaseModel):
     message: str
     executed: bool
     allocation_id: int
     warnings: list[str]
+    # Reported from the execution boundary. `executed` is true only when at
+    # least one order actually reached a broker — this route previously
+    # returned executed=True while placing no orders whatsoever.
+    trading_mode: Optional[str] = None
+    trading_permitted: Optional[bool] = None
+    blocked_reason: Optional[str] = None
+    orders: list[OrderOutcome] = []
 
 
 class AllocationHistoryItem(BaseModel):
@@ -172,6 +188,7 @@ async def calculate_allocation(
 @router.post("/execute", response_model=ExecuteResponse)
 async def execute_allocation(
     body: ExecuteRequest,
+    request: Request,
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
 ) -> ExecuteResponse:
@@ -198,21 +215,102 @@ async def execute_allocation(
             detail="Kill switch is active. Deactivate it before executing allocations.",
         )
 
-    if not settings.is_live_trading_enabled:
-        warnings.append("Paper trading mode: allocation recorded but no real capital moved.")
+    # ── Route through the single execution boundary ───────────────────────
+    #
+    # This endpoint previously returned executed=True after checking a kill
+    # switch and logging — it placed no orders, consulted no risk engine, and
+    # reached no broker, while telling the caller the allocation had been
+    # executed. Reporting success for work that did not happen is worse than
+    # reporting failure, so the response now reflects what actually occurred.
+    service = getattr(request.app.state, "execution_service", None)
+    stack = getattr(request.app.state, "execution_stack", None)
+
+    if service is None:
+        logger.error("allocation_execute_no_service", allocation_id=alloc.id)
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Execution service is unavailable — startup did not complete. "
+                "No orders can be placed."
+            ),
+        )
+
+    trading_permitted = bool(getattr(stack, "trading_permitted", False))
+    blocked_reason = getattr(stack, "startup_reason", None)
+
+    if not trading_permitted:
+        logger.error(
+            "allocation_execute_blocked",
+            allocation_id=alloc.id,
+            reason=blocked_reason,
+        )
+        return ExecuteResponse(
+            message=(
+                "Allocation NOT executed: trading is blocked because startup "
+                "reconciliation has not succeeded."
+            ),
+            executed=False,
+            allocation_id=alloc.id,
+            warnings=warnings,
+            trading_mode=service.mode.value,
+            trading_permitted=False,
+            blocked_reason=blocked_reason,
+            orders=[],
+        )
+
+    # Signals come from the strategy layer. No strategy is currently validated
+    # or wired to produce production signals, so there is nothing to submit.
+    # That is reported honestly rather than dressed up as a successful run.
+    signals = getattr(alloc, "pending_signals", None) or []
+
+    outcomes: list[OrderOutcome] = []
+    for sig, size in signals:
+        result = await service.submit_signal(
+            sig, size, portfolio_allocation={"allocation_id": alloc.id},
+        )
+        outcomes.append(OrderOutcome(
+            symbol=result.audit.symbol,
+            submitted=result.submitted,
+            outcome=result.outcome.value,
+            broker_order_id=result.broker_order_id,
+            reason=result.reason,
+        ))
+
+    any_submitted = any(o.submitted for o in outcomes)
+
+    if not signals:
+        warnings.append(
+            "No signals were available to execute. No validated strategy is "
+            "currently wired to produce production signals."
+        )
+
+    if service.mode.value == "paper":
+        warnings.append(
+            "Paper mode: orders route to the paper broker. No real capital moved."
+        )
 
     logger.info(
-        "allocation_executed",
+        "allocation_execute_completed",
         user_id=current_user.id,
         allocation_id=alloc.id,
         amount=float(alloc.contribution_amount),
+        orders=len(outcomes),
+        submitted=any_submitted,
     )
 
     return ExecuteResponse(
-        message="Allocation executed successfully.",
-        executed=True,
+        message=(
+            f"{sum(1 for o in outcomes if o.submitted)}/{len(outcomes)} orders "
+            f"submitted." if outcomes else
+            "No orders were placed — nothing to execute."
+        ),
+        executed=any_submitted,
         allocation_id=alloc.id,
         warnings=warnings,
+        trading_mode=service.mode.value,
+        trading_permitted=True,
+        blocked_reason=None,
+        orders=outcomes,
     )
 
 

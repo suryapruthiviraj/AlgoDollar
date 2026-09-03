@@ -1,0 +1,32 @@
+{
+  "name": "nse_daily_largemidcap",
+  "source": "Yahoo Finance via yfinance, NSE .NS tickers",
+  "version": "20260903",
+  "acquisition_date": "2026-09-03T17:22:41+00:00",
+  "date_range": [
+    "2006-01-02",
+    "2024-12-31"
+  ],
+  "instrument_universe": "Hand-maintained list of NSE large/mid-cap names as constituted TODAY. NOT point-in-time index membership.",
+  "n_instruments": 99,
+  "frequency": "daily",
+  "timezone": "naive dates (Asia/Kolkata trading sessions)",
+  "adjustment_method": "vendor adjusted close (splits + dividends), applied retroactively",
+  "corporate_action_policy": "vendor adjustment, plus masking of 12 detected unadjusted events (adj_ratio==raw_ratio test)",
+  "survivorship_policy": "SURVIVORSHIP-FILTERED \u2014 delisted securities absent from source (verified: SATYAMCOMP, DHFL, VIDEOIND return zero rows over listed periods)",
+  "point_in_time_policy": "NONE \u2014 today's universe applied to all history",
+  "checksum": "be05d2ccd470044973b23c044832780ada21d7832aba6f7224d60d5f387893fe",
+  "license_notes": "unspecified \u2014 verify vendor terms before any redistribution or commercial use",
+  "known_limitations": [
+    "no point-in-time index constituents",
+    "no point-in-time fundamentals",
+    "intraday history insufficient for research",
+    "no bid/ask spreads",
+    "delisted securities absent"
+  ],
+  "preprocessing": [
+    "trimmed to benchmark availability (2007-09-17)",
+    "masked 12 unadjusted corporate actions",
+    "forward-filled benchmark to panel index"
+  ]
+}

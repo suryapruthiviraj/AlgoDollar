@@ -41,3 +41,21 @@ class OrderValidationError(AlgoDollarError):
 
 class ReconciliationError(AlgoDollarError):
     """Raised when broker positions and internal positions do not reconcile."""
+
+
+class AmbiguousOrderStateError(AlgoDollarError):
+    """
+    Raised when a state-changing broker call failed with an unknown outcome.
+
+    The distinction this encodes is the one that matters most in execution: a
+    request that failed is not the same as a request that was rejected. If a
+    `place_order` call times out, the order may well have reached the exchange
+    — the response was simply lost.
+
+    Retrying here places a second real trade. Assuming failure leaves an
+    untracked live position. Both are worse than stopping, so this exception
+    exists to force the only safe response: reconcile against the broker and
+    find out what actually happened before doing anything else.
+
+    Never handle this by retrying.
+    """

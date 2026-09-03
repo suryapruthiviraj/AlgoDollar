@@ -32,12 +32,18 @@ WHAT WOULD MAKE THIS RESULT MEANINGLESS
 ---------------------------------------
 The universe is survivorship-filtered: delisted names are absent from the
 data source (verified — Satyam, DHFL and Videocon all return zero rows over
-periods when they were listed). That biases every result UPWARD.
+periods when they were listed).
 
-The consequence is asymmetric and worth stating before any number is read:
-a POSITIVE result here is uninterpretable, because it cannot be separated
-from the bias. A NEGATIVE result is robust, because a strategy that fails
-even after the losers have been deleted from the sample has genuinely failed.
+The direction of that bias on the quantity measured here is INDETERMINATE.
+Performance is reported as excess return over an equal-weight benchmark drawn
+from the SAME filtered universe, so the bias does not cleanly survive the
+subtraction — and for a momentum signal it plausibly runs against the
+strategy, since a company heading for delisting has collapsing momentum and
+would have been avoided, while the benchmark held it all the way down.
+
+Read every number below as a measurement of THIS SAMPLE, not as an estimate
+of the strategy. This dataset cannot establish true historical performance in
+either direction.
 """
 
 from __future__ import annotations

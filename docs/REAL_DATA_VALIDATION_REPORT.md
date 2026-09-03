@@ -63,12 +63,27 @@ Queried over windows when each company was actively listed and trading:
 | VIDEOIND | insolvency | **0 — absent** |
 | RELIANCE (control) | still listed | 720 — present |
 
-The source keeps survivors and drops failures. This has an asymmetric consequence that governs how every number in this report may be read:
+The source keeps survivors and drops failures.
 
-> **A positive result is uninterpretable** — it cannot be separated from the bias.
-> **A negative result is robust** — a strategy that fails after the losers have been deleted from the sample has genuinely failed.
+### CORRECTION — an earlier version of this report reasoned incorrectly here
 
-The headline finding of this report is negative. It is therefore trustworthy.
+The first draft claimed the bias is directional: *"a positive result is uninterpretable, a negative result is robust."* **That was wrong, and the error is worth stating plainly because it would have licensed an unjustified conclusion.**
+
+Survivorship bias inflates the **absolute** return of a long-only book, because the companies that went to zero are missing. But the quantity actually measured here is **excess return of the top quintile over an equal-weight portfolio of the same universe** — and both legs are computed on the same filtered set. The bias does not cleanly survive the subtraction.
+
+Worse, it plausibly runs the *other* way for this particular signal. A company heading for delisting — Satyam through 2008, DHFL through 2019 — has collapsing momentum long before it disappears. A momentum strategy would have ranked such a name in its **bottom** quintile and not held it, while the equal-weight benchmark would have held it all the way down. Deleting those companies from the sample therefore removes episodes in which momentum correctly avoided a disaster, which biases its measured excess return **downward**, not upward.
+
+The honest statement is therefore:
+
+> **The direction of survivorship bias on excess return is indeterminate and signal-dependent.** This dataset cannot establish the true historical performance of any strategy tested on it — in either direction.
+
+What remains valid is narrower, and is stated as such throughout this report:
+
+- The candidates failed **on this dataset**. That is a fact about this measurement.
+- It is **not** proof that no edge exists. An unbiased dataset could plausibly show a different result, and for a signal that avoids failing companies it could show a better one.
+- Conclusions that do **not** depend on the universe composition — the turnover finding, the IC-versus-profit inversion, the execution defects, the machinery verification — remain valid regardless.
+
+Obtaining point-in-time constituents and delisted history (see `DATA_ACQUISITION_PLAN.md`) is therefore not a refinement. It is the precondition for any performance claim at all.
 
 ### 2.4 Automated quality audit
 
@@ -307,14 +322,18 @@ The gate is fail-closed by construction: unrecorded evidence counts as failure, 
 
 ## 13. Honest conclusion
 
-The machinery works. It was pointed at nineteen years of real Indian equity data and it did the thing it was built to do: **it said no.**
+The machinery works. It was pointed at nineteen years of real Indian equity data and it did the thing it was built to do: **it declined to certify anything.**
 
-There is genuine, statistically detectable cross-sectional signal in this feature set — several signals carry deflated t-statistics above 4, and one above 7. That signal does not survive contact with transaction costs, it does not survive correction for having searched ten candidates, and the strongest of it is carried by 4% of rebalances and disappears below the 200-day moving average. When the leading candidate was finally shown data reserved from every selection decision, it underperformed a passive equal-weight portfolio of the same stocks.
+There is genuine, statistically detectable cross-sectional signal in this feature set — several signals carry deflated t-statistics above 4, and one above 7. That signal did not survive contact with transaction costs, it did not survive correction for having searched ten candidates, and the strongest of it was carried by 4% of rebalances and disappeared below the 200-day moving average. When the leading candidate was finally shown data reserved from every selection decision, it underperformed a passive equal-weight portfolio of the same stocks.
 
-That result is more trustworthy than a positive one would have been. The universe is survivorship-filtered in a way that inflates results — verified directly, with Satyam, DHFL and Videocon simply absent from the record. A strategy that fails on a dataset with the failures deleted has genuinely failed.
+**What that does and does not establish.** It establishes that these ten candidates failed on this dataset. It does **not** establish that no edge exists in the Indian market, and an earlier draft of this report overstated exactly that — see the correction in §2.3. The universe is survivorship-filtered, and because performance was measured as excess return over a benchmark drawn from the *same* filtered universe, the bias does not have a determinate direction. For a momentum signal it plausibly runs against the strategy, since the companies deleted from the sample are precisely the ones a momentum rule would have avoided. The correct conclusion is that **this dataset cannot establish true historical performance in either direction.**
 
-Three things are worth carrying forward. The signal with the best information coefficient was nearly the worst strategy, because turnover inverted the ranking — selecting models on predictive accuracy would have chosen exactly wrong. The gradient booster lost to twelve-one momentum on net return despite a far higher IC, so complexity was rejected on evidence rather than taste. And the passive equal-weight benchmark, at 17.09% CAGR and 0.830 Sharpe, turned out to be a much harder opponent than any of the ten candidates assembled to beat it.
+Three findings survive the data problem entirely, because none of them depends on which companies are in the universe:
 
-The correct action now is not to tune parameters until the holdout cooperates. It is to obtain unbiased data and re-run — and to accept, if it comes to that, that no tradeable edge was found.
+The signal with the best information coefficient was nearly the worst strategy, because turnover inverted the ranking — selecting models on predictive accuracy would have chosen exactly wrong. The gradient booster lost to twelve-one momentum on net return despite a far higher IC, so complexity was rejected on evidence rather than taste. And the passive equal-weight benchmark, at 17.09% CAGR and 0.830 Sharpe, proved a much harder opponent than any of the ten candidates assembled to beat it.
+
+The correct action now is not to tune parameters until the holdout cooperates. It is to obtain point-in-time constituents and delisted history, then re-run — and to accept whatever that shows.
 
 **PRODUCTION STATUS: NO STRATEGY VALIDATED.**
+
+Read precisely: *no strategy has been validated.* That is a statement about the absence of evidence, not evidence of absence.

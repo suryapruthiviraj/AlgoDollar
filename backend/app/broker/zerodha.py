@@ -12,6 +12,7 @@ from typing import Optional
 import pandas as pd
 import pytz
 
+from app.core.exceptions import AmbiguousOrderStateError
 from .base import (
     BrokerInterface,
     Exchange,
@@ -118,19 +119,40 @@ class ZerodhaBroker(BrokerInterface):
                 "call exchange_token() before trading."
             )
 
-    async def disconnect(self) -> None:
-        """Close WebSocket and invalidate session."""
+    async def disconnect(self, invalidate_token: bool = False) -> None:
+        """
+        Close the WebSocket and mark the session inactive.
+
+        `invalidate_token` defaults to False deliberately. Kite access tokens
+        last for a single trading day and can only be reissued through an
+        interactive login. Invalidating on every disconnect — which the
+        previous implementation did unconditionally — means an ordinary
+        restart or a WebSocket reconnect ends trading for the rest of the day
+        and requires a human at a browser to recover.
+
+        Pass invalidate_token=True only for a deliberate end-of-session
+        logout.
+        """
         if self._kws is not None:
             self._kws.stop()
             self._kws = None
-        if self._kite is not None and self._connected:
+
+        if invalidate_token and self._kite is not None and self._connected:
             loop = asyncio.get_event_loop()
             try:
                 await loop.run_in_executor(None, self._kite.invalidate_access_token)
-            except Exception:
-                pass
+                logger.info("Access token invalidated at caller's request.")
+            except Exception as exc:
+                # Swallowing this silently would leave the caller believing the
+                # session was terminated when it may still be live.
+                logger.error("Failed to invalidate access token: %s", exc)
+                raise
+
         self._connected = False
-        logger.info("ZerodhaBroker disconnected.")
+        logger.info(
+            "ZerodhaBroker disconnected (token %s).",
+            "invalidated" if invalidate_token else "retained for reconnection",
+        )
 
     # ------------------------------------------------------------------ #
     #  Auth helpers                                                        #
@@ -241,9 +263,42 @@ class ZerodhaBroker(BrokerInterface):
     #  Retry helper                                                        #
     # ------------------------------------------------------------------ #
 
-    async def _call_kite(self, fn, *args, retries: int = 3, **kwargs):
-        """Run a blocking kite call in executor with exponential-backoff retry."""
+    async def _call_kite(
+        self, fn, *args, retries: int = 3, idempotent: bool = True, **kwargs
+    ):
+        """
+        Run a blocking kite call in an executor, retrying READ calls only.
+
+        `idempotent` MUST be False for any call that changes broker state.
+
+        This retry loop was the root cause of a duplicate-order defect: it was
+        applied uniformly, including to `place_order`. A request that reached
+        the exchange but whose response was lost would be retried, producing a
+        second real order — measured at up to three live orders from a single
+        logical submission.
+
+        Retrying a read costs nothing. Retrying a write is a second trade. When
+        a non-idempotent call fails, the correct response is not another
+        attempt but AmbiguousOrderStateError, which forces the caller to
+        reconcile against the broker and find out what actually happened.
+        """
         loop = asyncio.get_event_loop()
+
+        if not idempotent:
+            try:
+                return await loop.run_in_executor(None, lambda: fn(*args, **kwargs))
+            except Exception as exc:
+                logger.error(
+                    "Non-idempotent Kite call %s failed: %s. NOT retrying — the "
+                    "request may already have reached the exchange. The caller "
+                    "must reconcile.", fn.__name__, exc,
+                )
+                raise AmbiguousOrderStateError(
+                    f"{fn.__name__} failed with {exc!r}. The broker may or may "
+                    f"not have accepted it. Query order status by tag before "
+                    f"taking any further action on this order."
+                ) from exc
+
         last_exc: Exception | None = None
         for attempt in range(retries):
             try:
@@ -271,10 +326,39 @@ class ZerodhaBroker(BrokerInterface):
         return await self._call_kite(self._kite.holdings)
 
     async def get_positions(self) -> list[dict]:
+        """
+        Net positions from Kite.
+
+        Kite returns {"net": [...], "day": [...]}. The previous implementation
+        used `pos.get("net", [])`, which silently produced an empty list if the
+        response shape ever changed — and an empty list is indistinguishable
+        from a genuinely flat account. Reconciliation would then compare empty
+        against empty, report a match, and permit trading against a portfolio
+        it had never actually read.
+
+        A missing "net" key is a broker-contract violation, not a flat book, so
+        it raises.
+        """
         await self._data_rl.acquire()
         pos = await self._call_kite(self._kite.positions)
-        # kite returns {"net": [...], "day": [...]}
-        return pos.get("net", [])
+
+        if not isinstance(pos, dict):
+            raise BrokerConnectionError(
+                f"Kite positions() returned {type(pos).__name__}, expected dict. "
+                f"Cannot distinguish this from a flat account; refusing to guess."
+            )
+        if "net" not in pos:
+            raise BrokerConnectionError(
+                f"Kite positions() response has no 'net' key (keys: "
+                f"{sorted(pos)}). Treating this as a flat account would be a "
+                f"silent, unbounded risk."
+            )
+        net = pos["net"]
+        if not isinstance(net, list):
+            raise BrokerConnectionError(
+                f"Kite positions()['net'] is {type(net).__name__}, expected list."
+            )
+        return net
 
     async def get_orders(self) -> list[dict]:
         await self._data_rl.acquire()
@@ -354,8 +438,26 @@ class ZerodhaBroker(BrokerInterface):
         order_type: OrderType,
         product: Product,
         tag: str = "",
+        trigger_price: Optional[float] = None,
     ) -> str:
+        """
+        Place an order.
+
+        `trigger_price` is required for SL and SL-M and was previously absent
+        entirely: SL orders sent the limit price as their own trigger, and SL-M
+        received no trigger at all. Strategies that believed they had
+        broker-side stops did not have them. Rather than guess a trigger, a
+        stop order without one is rejected.
+        """
         await self._order_rl.acquire()
+
+        if order_type in (OrderType.SL, OrderType.SL_M) and trigger_price is None:
+            raise ValueError(
+                f"{order_type.value} requires an explicit trigger_price. "
+                f"Deriving it from the limit price produces an order that does "
+                f"not stop out where the strategy intended."
+            )
+
         kwargs: dict = dict(
             variety=self._kite.VARIETY_REGULAR,
             exchange=exchange,
@@ -366,11 +468,16 @@ class ZerodhaBroker(BrokerInterface):
             order_type=_KITE_ORDER_TYPE_MAP[order_type],
             tag=tag[:20] if tag else None,
         )
+        # SL carries both a limit price and a trigger; SL-M carries only a
+        # trigger and fills at market once touched.
         if order_type in (OrderType.LIMIT, OrderType.SL):
             kwargs["price"] = price
-        if order_type == OrderType.SL:
-            kwargs["trigger_price"] = price  # caller sets stop; adjust if needed
-        order_id = await self._call_kite(self._kite.place_order, **kwargs)
+        if order_type in (OrderType.SL, OrderType.SL_M):
+            kwargs["trigger_price"] = trigger_price
+
+        order_id = await self._call_kite(
+            self._kite.place_order, idempotent=False, **kwargs
+        )
         logger.info(
             "Order placed: %s %s %s x%d @ %.2f → order_id=%s",
             txn_type.value, symbol, exchange, qty, price, order_id,
@@ -381,7 +488,7 @@ class ZerodhaBroker(BrokerInterface):
         await self._order_rl.acquire()
         try:
             await self._call_kite(
-                self._kite.cancel_order,
+                self._kite.cancel_order, idempotent=False,
                 variety=self._kite.VARIETY_REGULAR,
                 order_id=order_id,
             )
@@ -407,7 +514,9 @@ class ZerodhaBroker(BrokerInterface):
         if price is not None:
             kwargs["price"] = price
         try:
-            await self._call_kite(self._kite.modify_order, **kwargs)
+            await self._call_kite(
+                self._kite.modify_order, idempotent=False, **kwargs
+            )
             logger.info("Order modified: %s qty=%s price=%s", order_id, qty, price)
             return True
         except Exception as exc:

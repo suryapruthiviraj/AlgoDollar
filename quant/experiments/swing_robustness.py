@@ -24,8 +24,14 @@ Only after all of that is the FINAL HOLDOUT touched, exactly once.
 
 INTERPRETING ANYTHING POSITIVE HERE
 -----------------------------------
-The universe is survivorship-filtered. Every number below is biased upward.
-A negative result is therefore trustworthy; a positive one is not.
+The universe is survivorship-filtered, and the direction of that bias on
+excess return is INDETERMINATE (see swing_research.py). Every number below is
+a measurement of this sample, not an estimate of the strategy.
+
+What the concentration and regime tests establish does NOT depend on universe
+composition: if performance lives in 4% of rebalances, that is a property of
+the return series itself. Those findings survive the data problem. Absolute
+performance levels do not.
 """
 
 from __future__ import annotations

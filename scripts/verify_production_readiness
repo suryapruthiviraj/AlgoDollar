@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Single-command production readiness verification.
+# Usage: scripts/verify_production_readiness [--json] [--skip-tests]
+set -uo pipefail
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PY="$DIR/../backend/.venv/bin/python"
+[ -x "$PY" ] || PY="$(command -v python3)"
+exec "$PY" "$DIR/verify_production_readiness.py" "$@"
