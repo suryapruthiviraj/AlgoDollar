@@ -1,0 +1,78 @@
+# Build context hygiene for the AlgoDollar frontend image.
+#
+# The build context is ./frontend (see .github/workflows/docker.yml and
+# docker-compose.yml, both of which use `context: ./frontend`), so every pattern
+# below is relative to the frontend/ directory.
+#
+# Note what is deliberately NOT ignored, because the build needs it:
+#   package.json, next.config.ts, tsconfig.json, postcss.config.js,
+#   tailwind.config.ts, src/  (and package-lock.json once one exists)
+#
+# NOTE ON SYNTAX: .dockerignore patterns match against the path relative to the
+# context ROOT (Go filepath.Match), so a bare `node_modules/` excludes only a
+# top-level directory of that name. Patterns that can occur at any depth carry
+# a `**/` prefix as well.
+
+# ── Secrets ──────────────────────────────────────────────────────────────────
+# Anything named in a .env file here is at risk of being inlined into the public
+# client bundle by Next.js if it carries a NEXT_PUBLIC_ prefix. Keep them out.
+.env
+.env.*
+*.env
+**/.env
+**/.env.*
+**/*.env
+secrets/
+*.pem
+*.key
+**/*.pem
+**/*.key
+
+# ── Dependencies and build output: reinstalled/rebuilt inside the image ──────
+# Host node_modules would also carry darwin/arm64 native binaries
+# (@tailwindcss/oxide, @next/swc) that are wrong for a linux/amd64 image.
+node_modules/
+**/node_modules/
+.next/
+**/.next/
+out/
+build/
+dist/
+.turbo/
+.swc/
+
+# ── Package manager noise ────────────────────────────────────────────────────
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+**/*.log
+.pnpm-store/
+.npm/
+
+# ── Test, lint and coverage caches ───────────────────────────────────────────
+coverage/
+**/coverage/
+.nyc_output/
+.jest-cache/
+**/__snapshots__/
+.eslintcache
+
+# ── VCS, editor and OS noise ─────────────────────────────────────────────────
+.git/
+.gitignore
+.gitattributes
+.github/
+.DS_Store
+**/.DS_Store
+.idea/
+.vscode/
+*.swp
+**/*.swp
+*~
+
+# ── Docs and container metadata not needed to build or run ───────────────────
+*.md
+**/*.md
+Dockerfile
+.dockerignore
+docker-compose*.yml

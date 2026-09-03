@@ -1,4 +1,14 @@
-version: "3.9"
+# AlgoDollar — local / single-host compose topology.
+#
+# Before first run:   cp .env.example .env   and set POSTGRES_PASSWORD,
+# REDIS_PASSWORD and SECRET_KEY. Compose reads ./.env automatically for the
+# ${...} interpolation below; the three secrets are intentionally REQUIRED and
+# have no default, so this file cannot start a trading stack on a password that
+# is published in git.
+#
+#   docker compose up -d --build
+#
+# The obsolete top-level `version:` key has been removed (Compose v2 warns on it).
 
 networks:
   algodollar-net:
@@ -9,24 +19,44 @@ volumes:
   redis-data:
   backend-logs:
 
+# Shared fragment merged into every service with `<<: *defaults`.
+# no-new-privileges blocks a process from gaining privileges via setuid
+# binaries; bounded json-file logging stops a crash-looping container from
+# filling the host disk.
+x-defaults: &defaults
+  security_opt:
+    - no-new-privileges:true
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
+
 services:
   # ── PostgreSQL ─────────────────────────────────────────────────────────────
   postgres:
-    image: postgres:15-alpine
+    image: postgres:15.8-alpine
     container_name: algodollar-postgres
     restart: unless-stopped
+    <<: *defaults
     environment:
-      POSTGRES_USER: algodollar
-      POSTGRES_PASSWORD: algodollar_password
-      POSTGRES_DB: algodollar
+      POSTGRES_USER: ${POSTGRES_USER:-algodollar}
+      # No default: fail closed rather than ship a known password.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-algodollar}
     ports:
-      - "5432:5432"
+      # Bound to loopback only. Previously "5432:5432", which publishes the
+      # database on every host interface — remote-reachable if the host has a
+      # public IP or is on an untrusted network. Delete this block entirely
+      # unless you need psql from the host; the backend reaches Postgres over
+      # the algodollar-net bridge and does not need a published port.
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     networks:
       - algodollar-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U algodollar -d algodollar"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-algodollar} -d ${POSTGRES_DB:-algodollar}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -34,18 +64,32 @@ services:
 
   # ── Redis ──────────────────────────────────────────────────────────────────
   redis:
-    image: redis:7-alpine
+    image: redis:7.4-alpine
     container_name: algodollar-redis
     restart: unless-stopped
-    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
+    <<: *defaults
+    # Previously ran with no authentication at all while publishing 6379 on all
+    # interfaces: anyone who could reach the port had full read/write access.
+    command:
+      - redis-server
+      - --save
+      - "60"
+      - "1"
+      - --loglevel
+      - warning
+      - --requirepass
+      - ${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}
     ports:
-      - "6379:6379"
+      # Loopback only; same reasoning as Postgres. Safe to delete.
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis-data:/data
     networks:
       - algodollar-net
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -56,16 +100,43 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    image: algodollar/backend:local
     container_name: algodollar-backend
     restart: unless-stopped
-    env_file:
-      - .env
+    <<: *defaults
+    # The image starts as an unprivileged user (uid 10001) and binds port 8000,
+    # so it needs no Linux capabilities at all.
+    cap_drop:
+      - ALL
+    # `env_file: .env` was removed. It was mandatory and .env does not exist in
+    # a fresh clone, so `docker compose up` failed outright; it also injected
+    # every variable in the file into the container instead of an explicit
+    # allowlist. Each value the app actually reads is now passed by name.
     environment:
-      DATABASE_URL: postgresql+asyncpg://algodollar:algodollar_password@postgres:5432/algodollar
-      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-algodollar}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-algodollar}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      # Live trading must be an explicit, deliberate opt-in. Defaulting here as
+      # well as in the image and in app/core/config.py means three independent
+      # things must all say "live" before real orders can be placed.
+      TRADING_MODE: ${TRADING_MODE:-paper}
+      APP_ENV: ${APP_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set in .env (>=32 chars)}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      KITE_API_KEY: ${KITE_API_KEY:-}
+      KITE_API_SECRET: ${KITE_API_SECRET:-}
+      KITE_ACCESS_TOKEN: ${KITE_ACCESS_TOKEN:-}
+      KITE_REDIRECT_URL: ${KITE_REDIRECT_URL:-http://localhost:3000/kite/callback}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     ports:
-      - "8000:8000"
+      # Loopback by default. Set BACKEND_BIND=0.0.0.0 only behind a reverse
+      # proxy that terminates TLS and authenticates callers — this API can place
+      # orders, and /docs is served unauthenticated.
+      - "${BACKEND_BIND:-127.0.0.1}:8000:8000"
     volumes:
+      # Named volume, not a host bind mount: nothing on the host filesystem is
+      # exposed to the container. The image pre-creates /app/logs owned by uid
+      # 10001 so the volume is seeded writable for the non-root user.
       - backend-logs:/app/logs
     depends_on:
       postgres:
@@ -74,49 +145,84 @@ services:
         condition: service_healthy
     networks:
       - algodollar-net
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
+    # No healthcheck override here on purpose. The previous one probed
+    # http://localhost:8000/health, which does not exist — the real route is
+    # /api/v1/health (app.include_router(api_router, prefix="/api/v1") plus the
+    # health router at prefix "/health"). It could therefore never pass, the
+    # backend was permanently "unhealthy", and frontend's
+    # `depends_on: condition: service_healthy` deadlocked forever. The correct
+    # probe now lives in backend/Dockerfile and Compose inherits it.
+    stop_grace_period: 30s
 
   # ── Celery Worker ──────────────────────────────────────────────────────────
-  worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: algodollar-worker
-    restart: unless-stopped
-    command: ["python", "-m", "app.worker"]
-    env_file:
-      - .env
-    environment:
-      DATABASE_URL: postgresql+asyncpg://algodollar:algodollar_password@postgres:5432/algodollar
-      REDIS_URL: redis://redis:6379/0
-    volumes:
-      - backend-logs:/app/logs
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - algodollar-net
+  # DISABLED — this service cannot start as written.
+  #
+  #   * Its command was `python -m app.worker`, but backend/app/worker.py does
+  #     not exist anywhere in the repository.
+  #   * There is no Celery application defined either: `grep -rn "Celery("
+  #     backend/app` returns nothing, even though celery[redis] is installed.
+  #
+  # With `restart: unless-stopped` it would crash-loop indefinitely, burning CPU
+  # and filling the logs while appearing to be a running part of the stack.
+  # Re-enable once a worker entrypoint exists, and give it a healthcheck
+  # (e.g. `celery -A app.worker inspect ping`) so failures are visible.
+  #
+  # worker:
+  #   build:
+  #     context: ./backend
+  #     dockerfile: Dockerfile
+  #   image: algodollar/backend:local
+  #   container_name: algodollar-worker
+  #   restart: unless-stopped
+  #   security_opt: ["no-new-privileges:true"]
+  #   cap_drop: [ALL]
+  #   command: ["celery", "-A", "app.worker", "worker", "--loglevel=INFO"]
+  #   environment:
+  #     DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-algodollar}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-algodollar}
+  #     REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+  #     TRADING_MODE: ${TRADING_MODE:-paper}
+  #     SECRET_KEY: ${SECRET_KEY}
+  #   volumes:
+  #     - backend-logs:/app/logs
+  #   depends_on:
+  #     postgres: {condition: service_healthy}
+  #     redis:    {condition: service_healthy}
+  #   networks: [algodollar-net]
 
   # ── Frontend (Next.js) ─────────────────────────────────────────────────────
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        # This MUST be a build arg, not a runtime environment variable.
+        # src/lib/api.ts reads process.env.NEXT_PUBLIC_API_URL in client-side
+        # code, and Next.js inlines NEXT_PUBLIC_* into the browser bundle at
+        # build time. It was previously set under `environment:`, where it had
+        # no effect on the bundle at all.
+        #
+        # The value must also be reachable from the USER'S BROWSER, which runs
+        # on the host and cannot resolve the compose-internal name `backend`.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    image: algodollar/frontend:local
     container_name: algodollar-frontend
     restart: unless-stopped
+    <<: *defaults
+    cap_drop:
+      - ALL
     environment:
-      NEXT_PUBLIC_API_URL: http://backend:8000
+      # Server-side only (the rewrites() in next.config.ts run in the container,
+      # where `backend` does resolve).
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
     ports:
-      - "3000:3000"
+      - "${FRONTEND_BIND:-127.0.0.1}:3000:3000"
     depends_on:
       backend:
-        condition: service_healthy
+        # Deliberately service_started, not service_healthy. The backend's
+        # health probe depends on Postgres, so gating the UI on it means a
+        # database outage also takes down the dashboard that would report the
+        # outage. The UI should come up and surface the error itself.
+        condition: service_started
     networks:
       - algodollar-net
+    # Healthcheck is inherited from frontend/Dockerfile.

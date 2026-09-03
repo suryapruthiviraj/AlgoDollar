@@ -1,0 +1,111 @@
+# Build context hygiene for the AlgoDollar backend image.
+#
+# The build context is ./backend  (see .github/workflows/docker.yml and
+# docker-compose.yml, both of which use `context: ./backend`), so every pattern
+# below is relative to the backend/ directory.
+#
+# Without this file the context is ~567 MB, almost all of it backend/.venv --
+# a macOS/arm64 virtualenv that is useless inside a linux/amd64 image.
+#
+# NOTE ON SYNTAX: .dockerignore patterns are matched against the path relative
+# to the context ROOT, using Go filepath.Match semantics. A bare `__pycache__/`
+# therefore only excludes a top-level directory of that name, NOT the nested
+# ones that actually exist under app/. Anything that can appear at any depth is
+# written with a `**/` prefix below, and the root-anchored form is kept too.
+
+# ── Secrets: must never enter the build context, let alone the image ─────────
+# app/core/config.py loads Settings from a `.env` file in the process CWD, so a
+# stray .env copied to /app would silently override runtime config -- including
+# TRADING_MODE. Keep it out of the context entirely.
+.env
+.env.*
+*.env
+**/.env
+**/.env.*
+**/*.env
+secrets/
+**/secrets/
+*.pem
+**/*.pem
+*.key
+**/*.key
+*.p12
+*.pfx
+**/*credentials*.json
+
+# ── Local virtualenvs ────────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+**/.venv/
+**/venv/
+
+# ── Python bytecode and caches ───────────────────────────────────────────────
+__pycache__/
+**/__pycache__/
+*.py[cod]
+**/*.py[cod]
+*$py.class
+**/*.so
+.Python
+
+# ── Tests, lint and coverage caches (never shipped; tests do not run in-image)
+tests/
+.pytest_cache/
+**/.pytest_cache/
+.mypy_cache/
+**/.mypy_cache/
+.ruff_cache/
+**/.ruff_cache/
+.tox/
+.nox/
+.hypothesis/
+**/.hypothesis/
+.coverage
+.coverage.*
+**/.coverage
+coverage.xml
+htmlcov/
+
+# ── Data, models and logs: market data / PII risk plus large files ───────────
+data_cache/
+**/data_cache/
+data/
+logs/
+**/logs/
+*.log
+**/*.log
+*.db
+**/*.db
+*.sqlite
+*.sqlite3
+**/*.sqlite*
+*.parquet
+**/*.parquet
+*.h5
+*.pkl
+*.joblib
+**/*.pkl
+**/*.joblib
+
+# ── VCS, editor and OS noise ─────────────────────────────────────────────────
+.git/
+.gitignore
+.gitattributes
+.github/
+.DS_Store
+**/.DS_Store
+.idea/
+.vscode/
+*.swp
+**/*.swp
+*~
+
+# ── Docs and container metadata not needed to build or run ───────────────────
+docs/
+*.md
+**/*.md
+Dockerfile
+.dockerignore
+docker-compose*.yml
