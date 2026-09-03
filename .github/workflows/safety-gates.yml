@@ -17,27 +17,57 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+  workflow_dispatch:
+
+# Least privilege: these gates only read the tree and run tests.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   safety-gates:
     name: Execution safety and live-trading eligibility
     runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    # NOTE: TRADING_MODE is deliberately NOT set anywhere in this job. The
+    # assertion below checks the compiled-in DEFAULT, and setting it here would
+    # make that assertion prove nothing. No broker credential of any kind is
+    # provided to this workflow, and none may be added: these gates must be
+    # runnable by anyone, including on a fork PR with no secrets at all.
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The "no secrets are tracked" step below uses `git ls-files`, which
+          # needs the checkout but not a stored credential.
+          persist-credentials: false
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
           cache: pip
+          cache-dependency-path: |
+            backend/pyproject.toml
+            backend/requirements.txt
 
       - name: Install dependencies
         working-directory: backend
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[test]" || pip install -r requirements.txt
-          pip install pytest pytest-asyncio
+          # This used to be `pip install -e ".[test]" || pip install -r
+          # requirements.txt`. That fallback is what let a broken build backend
+          # in pyproject.toml go unnoticed: the editable install failed, the
+          # `||` swallowed it, and the job continued with requirements.txt —
+          # which carries no test extras, so aiosqlite was missing and seven
+          # reconciliation tests ERRORed with a confusing ModuleNotFoundError
+          # instead of a clear packaging error. One install, no fallback.
+          pip install -e ".[test]"
 
       # The safety suites must EXIST. A deleted safety test must break the
       # build rather than silently reducing coverage.

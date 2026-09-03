@@ -11,26 +11,75 @@ on:
     paths:
       - "frontend/**"
       - ".github/workflows/frontend.yml"
+  workflow_dispatch:
+
+# Least privilege: this workflow only reads the source and produces artifacts.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
     name: Lint, Type-check & Build
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js 20
-        uses: actions/setup-node@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          node-version: "20"
-          cache: "npm"
+          persist-credentials: false
+
+      # frontend/package-lock.json is not committed. setup-node's npm cache is
+      # keyed on a lockfile, and pointing `cache-dependency-path` at a file that
+      # does not exist is a hard error ("Some specified paths were not resolved,
+      # unable to cache dependencies"), not a warning. So detect it instead of
+      # assuming it — and pick up the cache automatically once someone commits
+      # a lockfile, without another edit here.
+      - name: Detect npm lockfile
+        id: lockfile
+        run: |
+          if [ -f frontend/package-lock.json ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+            echo "frontend/package-lock.json found: using npm ci with dependency caching."
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::warning file=frontend/package.json::frontend/package-lock.json is not committed. npm dependency caching is disabled and versions are re-resolved on every run, so two builds of the same commit can differ. Commit a lockfile to make this reproducible and cacheable."
+          fi
+
+      - name: Set up Node.js 22 (with npm cache)
+        if: steps.lockfile.outputs.present == 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # Matches the node:22-bookworm-slim base used by frontend/Dockerfile,
+          # so CI and the shipped image compile against the same runtime.
+          node-version: "22"
+          cache: npm
           cache-dependency-path: frontend/package-lock.json
+
+      - name: Set up Node.js 22 (no lockfile, caching unavailable)
+        if: steps.lockfile.outputs.present != 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
 
       - name: Install dependencies
         working-directory: frontend
-        run: npm ci
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            # --legacy-peer-deps is required, not cosmetic: next@15.0.0 declares
+            # peerDependencies.react as "^18.2.0 || 19.0.0-rc-65a56d0e-20241020",
+            # which excludes the stable react@19 that package.json's "^19.0.0"
+            # resolves to, so a plain `npm install` dies with ERESOLVE. The same
+            # flag is used, for the same reason, in frontend/Dockerfile.
+            # Upgrading next to >=15.0.3 in package.json removes the need.
+            npm install --legacy-peer-deps --no-audit --no-fund
+          fi
 
       - name: Run ESLint
         working-directory: frontend
@@ -38,17 +87,25 @@ jobs:
 
       - name: Type-check with tsc
         working-directory: frontend
-        run: npx tsc --noEmit
+        run: npx --no-install tsc --noEmit
 
       - name: Build Next.js application
         working-directory: frontend
         env:
+          # Inlined into the client bundle at build time, so it must be a URL a
+          # browser can resolve. Never a credential — this value ships publicly.
           NEXT_PUBLIC_API_URL: http://localhost:8000
         run: npm run build
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ !cancelled() }}
         with:
           name: nextjs-build
-          path: frontend/.next/
+          # .next/cache is a local build cache, not part of the output, and is
+          # by far the largest thing in .next/.
+          path: |
+            frontend/.next/
+            !frontend/.next/cache/
           retention-days: 3
+          if-no-files-found: error

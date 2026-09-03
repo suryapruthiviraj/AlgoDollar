@@ -1,0 +1,96 @@
+# Dependabot keeps the three dependency surfaces of this repository current.
+#
+# It matters more than usual here for two reasons:
+#
+#   1. The workflows pin every action to a full commit SHA. That is the right
+#      supply-chain posture, but a hand-maintained SHA pin rots — nobody
+#      notices a patched action. Dependabot's `github-actions` ecosystem
+#      updates the SHA *and* the `# vX.Y.Z` comment beside it, which turns the
+#      pin from a maintenance burden into a reviewed pull request.
+#
+#   2. Security Scanning gates on pip-audit and `npm audit --audit-level=high`.
+#      Those fail the build when an advisory lands against a pinned version, so
+#      an upgrade PR needs to already be open when that happens.
+#
+# Updates arrive as pull requests, which run the full CI suite — including the
+# safety gates — before anyone can merge them. Nothing here auto-merges.
+version: 2
+
+updates:
+  # ── GitHub Actions used by .github/workflows/*.yml ─────────────────────────
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
+    labels:
+      - "dependencies"
+    groups:
+      # One PR for routine action bumps instead of five.
+      actions-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # ── Python backend (pyproject.toml + requirements.txt) ─────────────────────
+  - package-ecosystem: "pip"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "deps"
+      prefix-development: "deps-dev"
+    labels:
+      - "dependencies"
+    groups:
+      python-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      # Major bumps of the numeric stack silently change model output, and the
+      # backtests and strategy tests are the only thing standing between that
+      # and a trading decision. They get deliberate, individually reviewed
+      # upgrades rather than an automatic PR.
+      - dependency-name: "numpy"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "scipy"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "pandas"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "scikit-learn"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "lightgbm"
+        update-types: ["version-update:semver-major"]
+
+  # ── Next.js frontend ───────────────────────────────────────────────────────
+  # There is no frontend/package-lock.json yet. Dependabot still reads
+  # package.json and will start producing lockfile updates as soon as one is
+  # committed.
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "deps"
+      prefix-development: "deps-dev"
+    labels:
+      - "dependencies"
+    groups:
+      npm-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"

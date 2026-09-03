@@ -1,111 +1,280 @@
 name: Security Scanning
 
+# Triggers deliberately use `pull_request`, never `pull_request_target`.
+# `pull_request_target` runs the BASE repository's workflow with a writable
+# token and access to secrets while checking out the fork's code — for a
+# scanning workflow that is a straight path to secret exfiltration from an
+# untrusted PR. `pull_request` runs with no secrets and a read-only token,
+# which is all any of these scanners need.
 on:
   push:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
   schedule:
-    # Run every Monday at 08:00 UTC
+    # Every Monday at 08:00 UTC. Advisory databases change even when the code
+    # does not, so a scheduled run catches newly published CVEs.
     - cron: "0 8 * * 1"
+  workflow_dispatch:
+
+# Least privilege. No SARIF is uploaded to code scanning, so `security-events:
+# write` is deliberately NOT granted — reports are attached to the run as
+# artifacts instead. Grant it only if/when a SARIF upload step is added.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   # ── Secret scanning ─────────────────────────────────────────────────────────
   secret-scan:
     name: Secret Scan (TruffleHog)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # Required: the scan below walks the whole commit graph. A shallow
+          # checkout would silently scan only the tip commit.
           fetch-depth: 0
+          persist-credentials: false
 
-      - name: Run TruffleHog secret scanner
-        uses: trufflesecurity/trufflehog@main
-        with:
-          path: ./
-          base: ${{ github.event.repository.default_branch }}
-          head: HEAD
-          extra_args: --debug --only-verified
+      # WHY THIS IS A `docker run` AND NOT trufflesecurity/trufflehog@<sha>
+      #
+      # The previous version of this job passed `base: <default_branch>` and
+      # `head: HEAD` to that action. On a push to main those resolve to the same
+      # commit, and the action's entrypoint exits 1 with "BASE and HEAD commits
+      # are the same" — which is why this job was red on every push.
+      #
+      # Letting the action derive base/head from the event fixes that specific
+      # case but not the ones this repository actually needs to survive. When
+      # the action has no base (an initial push, or a force-push whose
+      # `github.event.before` no longer exists, or a `schedule` run) it emits
+      #     trufflehog git file:///tmp/ --since-commit --branch <sha> ...
+      # with an empty word for the commit, so `--branch` is consumed as the
+      # value of `--since-commit` and the scan fails on malformed arguments.
+      #
+      # Scanning the entire history on every event has none of those edge cases,
+      # is strictly more coverage than a commit-range diff (it re-checks history
+      # that a force-push may have rewritten), and costs seconds on a repository
+      # this size. If the history ever grows enough for this to hurt, the answer
+      # is to keep the full scan on `schedule` and diff `github.event.before`..
+      # `github.event.after` on push — not to weaken it here.
+      #
+      # `--only-verified` is the one narrowing, and it is the documented default
+      # posture: a finding fails this job only when TruffleHog has authenticated
+      # the credential against its provider and it is live. Unverified pattern
+      # matches (e.g. the placeholders in .env.example) do not fail the build.
+      # There are no path or rule exclusions.
+      - name: Scan full git history for verified secrets
+        env:
+          # Pinned by digest, not by tag: a mutable tag can be repointed at new
+          # content. This digest is ghcr.io/trufflesecurity/trufflehog:3.97.3.
+          TRUFFLEHOG_IMAGE: ghcr.io/trufflesecurity/trufflehog@sha256:fb7cf5c0abda87c477789e241ed361ccbb1d459491d6c5de347b78f094b8034b
+        run: |
+          docker run --rm \
+            --volume "${GITHUB_WORKSPACE}:/repo" \
+            --workdir /repo \
+            "${TRUFFLEHOG_IMAGE}" \
+            git file:///repo \
+            --only-verified \
+            --fail \
+            --no-update \
+            --github-actions
 
   # ── Dependency audit ────────────────────────────────────────────────────────
   dependency-audit:
     name: Dependency Audit
     runs-on: ubuntu-latest
+    timeout-minutes: 25
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
+          # Both of these exist. The previous version of this job cached on
+          # frontend/package-lock.json, which does not exist in this repository,
+          # and setup-node failed the job outright with "Some specified paths
+          # were not resolved, unable to cache dependencies".
+          cache: pip
+          cache-dependency-path: |
+            backend/pyproject.toml
+            backend/requirements.txt
 
-      - name: Set up Node.js 20
-        uses: actions/setup-node@v4
+      # frontend/package-lock.json is not committed, so the npm cache cannot be
+      # keyed on it. Detect rather than assume, and start using the cache
+      # automatically if a lockfile is committed later.
+      - name: Detect npm lockfile
+        id: lockfile
+        run: |
+          if [ -f frontend/package-lock.json ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::warning file=frontend/package.json::frontend/package-lock.json is not committed, so npm caching is disabled and the audit below resolves a fresh dependency tree. The Node dependencies ARE still audited; commit a lockfile to audit exactly what ships."
+          fi
+
+      - name: Set up Node.js 22 (with npm cache)
+        if: steps.lockfile.outputs.present == 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "20"
-          cache: "npm"
+          node-version: "22"
+          cache: npm
           cache-dependency-path: frontend/package-lock.json
 
+      - name: Set up Node.js 22 (no lockfile, caching unavailable)
+        if: steps.lockfile.outputs.present != 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+
       - name: Install pip-audit
-        run: pip install pip-audit
+        run: |
+          python -m pip install --upgrade pip
+          # Left unpinned on purpose: pip-audit queries a live advisory
+          # database, so pinning the client would not make results reproducible
+          # anyway, while it would delay fixes to the client itself.
+          pip install pip-audit
 
       - name: Audit Python dependencies
         working-directory: backend
         run: |
-          pip install -e "."
-          pip-audit --strict --output json > pip-audit-report.json || true
-          pip-audit --strict
+          # requirements.txt is the fully pinned set that actually ships (the
+          # >= ranges in pyproject.toml cannot be audited without resolving them
+          # first). Transitive dependencies are resolved and audited too.
+          # --strict turns an incomplete audit into a failure rather than a
+          # silent gap.
+          #
+          # `set +e` here is not error suppression: the real exit status is
+          # captured and re-raised at the end of the step. It exists only so the
+          # JSON report can be rendered into the log before the step fails —
+          # `--output` writes to a file, so without this the log would show a
+          # bare non-zero exit and nothing about which advisory tripped it.
+          set +e
+          pip-audit \
+            --strict \
+            --requirement requirements.txt \
+            --format json \
+            --output pip-audit-report.json
+          audit_status=$?
+          set -e
+
+          if [ -s pip-audit-report.json ]; then
+            jq -r '
+              .dependencies[]?
+              | select((.vulns // []) | length > 0)
+              | . as $d
+              | .vulns[]
+              | "::error::\($d.name) \($d.version): \(.id) — fixed in \((.fix_versions // []) | join(", ") | if . == "" then "no fixed version published" else . end)"
+            ' pip-audit-report.json || true
+          fi
+
+          exit $audit_status
 
       - name: Audit Node.js dependencies
         working-directory: frontend
         run: |
-          npm ci
+          if [ ! -f package-lock.json ]; then
+            # `npm audit` needs a resolved dependency tree. With no committed
+            # lockfile, resolve one here — --package-lock-only writes the tree
+            # without installing anything — so the Node dependencies are really
+            # scanned instead of quietly skipped.
+            #
+            # --legacy-peer-deps is required, not cosmetic: next@15.0.0 declares
+            # peerDependencies.react as "^18.2.0 || 19.0.0-rc-65a56d0e-20241020",
+            # which excludes the stable react@19 that "^19.0.0" resolves to, so
+            # a plain resolve dies with ERESOLVE. frontend/Dockerfile carries
+            # the same flag for the same reason.
+            npm install --package-lock-only --legacy-peer-deps --no-audit --no-fund
+          fi
           npm audit --audit-level=high
 
-      - name: Upload pip-audit report
-        uses: actions/upload-artifact@v4
-        if: always()
+      - name: Upload dependency audit report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ !cancelled() }}
         with:
           name: pip-audit-report
           path: backend/pip-audit-report.json
           retention-days: 30
+          if-no-files-found: warn
 
   # ── Bandit static analysis ──────────────────────────────────────────────────
   bandit:
     name: Bandit Static Analysis
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
 
       - name: Install Bandit
-        run: pip install bandit[toml]
+        run: |
+          python -m pip install --upgrade pip
+          # Pinned: Bandit's rule set decides pass/fail, so an unpinned upgrade
+          # can turn a green main red with no code change. Bump deliberately.
+          pip install "bandit[toml]==1.9.4"
 
       - name: Run Bandit
         working-directory: backend
         run: |
-          bandit -r app \
+          # SCOPE: `app` is the shipped service. backend/tests/ is not scanned
+          # because it lives outside that tree — no --exclude/--skip is needed
+          # and none is used. That is the right call for a test suite whose job
+          # is to construct hostile inputs: assert-heavy fixtures and throwaway
+          # credentials produce findings that say nothing about the deployed
+          # code. No individual check is disabled anywhere.
+          #
+          # THRESHOLD: fail on MEDIUM-or-higher severity at MEDIUM-or-higher
+          # confidence. That is Bandit's standard gating posture. LOW-severity
+          # findings are still collected in the JSON report attached to the run
+          # (they are visible, just not blocking); MEDIUM and HIGH block.
+          #
+          # `set +e` is not suppression: the exit status is captured and
+          # re-raised below. Bandit's --output writes the findings to a file
+          # instead of stdout, so without this the log would show a bare
+          # non-zero exit and nothing about what failed.
+          set +e
+          bandit \
+            --recursive app \
             --severity-level medium \
             --confidence-level medium \
             --format json \
-            --output bandit-report.json || true
-          bandit -r app \
-            --severity-level medium \
-            --confidence-level medium
+            --output bandit-report.json
+          bandit_status=$?
+          set -e
+
+          if [ -s bandit-report.json ]; then
+            jq -r '
+              .results[]?
+              | "::error file=backend/\(.filename),line=\(.line_number)::[\(.test_id)] \(.issue_severity)/\(.issue_confidence) — \(.issue_text)"
+            ' bandit-report.json || true
+          fi
+
+          exit $bandit_status
 
       - name: Upload Bandit report
-        uses: actions/upload-artifact@v4
-        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ !cancelled() }}
         with:
           name: bandit-report
           path: backend/bandit-report.json
           retention-days: 30
+          if-no-files-found: warn

@@ -11,11 +11,24 @@ on:
     paths:
       - "backend/**"
       - ".github/workflows/backend.yml"
+  workflow_dispatch:
+
+# Least privilege. Nothing in this workflow writes to the repository, opens
+# issues, or publishes packages, so the token gets read-only access to code.
+permissions:
+  contents: read
+
+# Supersede in-flight runs for the same branch/PR. A stale run of an older
+# commit is never the answer to "is this commit good?".
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
     name: Lint, Type-check & Test
     runs-on: ubuntu-latest
+    timeout-minutes: 25
 
     services:
       postgres:
@@ -39,30 +52,38 @@ jobs:
       SECRET_KEY: ci-test-secret-key-at-least-32-characters-long
       ALGORITHM: HS256
       ACCESS_TOKEN_EXPIRE_MINUTES: 60
+      # This platform can place real orders. CI must never run in any mode
+      # that could reach a live broker.
       TRADING_MODE: paper
       LOG_LEVEL: WARNING
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nothing here pushes back to the repo, so do not leave a usable
+          # credential in .git/config for later steps to pick up.
+          persist-credentials: false
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
-
-      - name: Cache pip dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('backend/pyproject.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
+          # setup-python's own pip cache replaces the hand-rolled actions/cache
+          # step. Both paths below exist in the repo; pointing the cache at a
+          # file that does not exist is a hard error, not a warning.
+          cache: pip
+          cache-dependency-path: |
+            backend/pyproject.toml
+            backend/requirements.txt
 
       - name: Install dependencies
         working-directory: backend
         run: |
           python -m pip install --upgrade pip
+          # No `|| true` and no fallback: if the project metadata is broken the
+          # install must fail loudly here rather than limping on with a partial
+          # environment and failing later in a confusing place.
           pip install -e ".[test]"
 
       - name: Run ruff linter
@@ -83,19 +104,42 @@ jobs:
             --junitxml=test-results.xml \
             -q
 
+      # Codecov needs a token this repository does not currently have, and on
+      # a pull request from a fork secrets are unavailable by design. Rather
+      # than letting the upload fail (or hiding it behind fail_ci_if_error),
+      # decide up front whether it can run. Coverage is still computed above
+      # and attached to the run as an artifact either way, so nothing is lost.
+      - name: Determine whether Codecov upload is configured
+        id: codecov_config
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        run: |
+          if [ -n "$CODECOV_TOKEN" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::CODECOV_TOKEN is not configured for this repository, so the Codecov upload is not attempted. backend/coverage.xml is attached to this run as an artifact instead."
+          fi
+
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+        if: steps.codecov_config.outputs.enabled == 'true'
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: backend/coverage.xml
           flags: backend
           name: backend-coverage
-          fail_ci_if_error: false
+          # If the upload is configured it is expected to work; a broken
+          # upload should be visible, not swallowed.
+          fail_ci_if_error: true
 
-      - name: Upload test results
-        uses: actions/upload-artifact@v4
-        if: always()
+      - name: Upload test results and coverage
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ !cancelled() }}
         with:
           name: backend-test-results
-          path: backend/test-results.xml
+          path: |
+            backend/test-results.xml
+            backend/coverage.xml
           retention-days: 7
+          if-no-files-found: warn
