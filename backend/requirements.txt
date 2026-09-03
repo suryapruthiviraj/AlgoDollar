@@ -22,7 +22,7 @@ celery[redis]==5.4.0
 websockets==13.1
 slowapi==0.1.9
 bcrypt==4.2.0
-cryptography==46.0.6   # PYSEC-2026-35 / PYSEC-2026-2141 / GHSA-537c-gmf6-5ccf
+cryptography==50.0.1   # PYSEC-2026-3552/3553/3554, GHSA-537c-gmf6-5ccf
 greenlet==3.1.1
 anyio==4.6.2
 starlette==0.41.3

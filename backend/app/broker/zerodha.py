@@ -534,8 +534,9 @@ class ZerodhaBroker(BrokerInterface):
         price: Optional[float] = None,
     ) -> bool:
         await self._order_rl.acquire()
+        kite = self._require_kite()
         kwargs: dict = dict(
-            variety=self._kite.VARIETY_REGULAR,
+            variety=kite.VARIETY_REGULAR,
             order_id=order_id,
         )
         if qty is not None:
@@ -544,7 +545,7 @@ class ZerodhaBroker(BrokerInterface):
             kwargs["price"] = price
         try:
             await self._call_kite(
-                self._kite.modify_order, idempotent=False, **kwargs
+                kite.modify_order, idempotent=False, **kwargs
             )
             logger.info("Order modified: %s qty=%s price=%s", order_id, qty, price)
             return True

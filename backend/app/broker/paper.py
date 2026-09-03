@@ -678,10 +678,22 @@ class PaperBroker(BrokerInterface):
             if self._redis is not None:
                 self._redis.set(self._key("state"), blob)
             else:
-                self._state_path.parent.mkdir(parents=True, exist_ok=True)
-                tmp = self._state_path.with_suffix(self._state_path.suffix + ".tmp")
+                # Guarded at the top of the method: reaching the else branch
+                # means _redis is None, which leaves _state_path as the only
+                # possible store. Bind it so that invariant is checked rather
+                # than assumed — a None here would otherwise surface as an
+                # AttributeError that the handler below silently downgrades
+                # to "persistence degraded".
+                path = self._state_path
+                if path is None:
+                    raise PaperBrokerStateError(
+                        "PaperBroker has neither a redis client nor a "
+                        "state_path; state cannot be persisted."
+                    )
+                path.parent.mkdir(parents=True, exist_ok=True)
+                tmp = path.with_suffix(path.suffix + ".tmp")
                 tmp.write_text(blob)
-                tmp.replace(self._state_path)          # atomic
+                tmp.replace(path)                      # atomic
             self._persistence_degraded = False
         except Exception as exc:                       # noqa: BLE001
             # Do not fabricate a rollback of an already-applied fill; instead
@@ -1097,12 +1109,12 @@ class PaperBroker(BrokerInterface):
         if txn_type == TransactionType.SELL:
             free = self._free_qty(symbol, exchange, product)
             if qty > free:
-                reason = (
+                holdings_reject = (
                     RejectReason.SHORT_SELL_NOT_SUPPORTED if free <= 0
                     else RejectReason.INSUFFICIENT_HOLDINGS
                 )
                 return self._reject(
-                    order, reason,
+                    order, holdings_reject,
                     f"sell {qty} but only {free} free {symbol} held; short "
                     "selling is not supported by this broker",
                 )

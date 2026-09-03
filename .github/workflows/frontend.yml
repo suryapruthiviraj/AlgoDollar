@@ -151,5 +151,10 @@ jobs:
           path: |
             frontend/.next/**
             !frontend/.next/cache/**
+          # `.next` is a DOT-directory, and upload-artifact v4+ excludes hidden
+          # files by default. Without this the step reported "No files were
+          # found" even though the build had succeeded and emitted all 19
+          # routes — the files were there, just filtered out.
+          include-hidden-files: true
           retention-days: 3
           if-no-files-found: error
