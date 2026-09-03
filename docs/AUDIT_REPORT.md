@@ -8,17 +8,21 @@
 
 ## 0. The single most important statement in this document
 
-**No component of this system has ever been validated on real market data.**
+> **SUPERSEDED IN PART.** This document covers the *engineering* audit, whose results all come from **synthetic data with known ground truth** — the correct way to verify that machinery is correct, and silent on whether any strategy is profitable.
+>
+> A subsequent phase acquired real NSE data (99 symbols, 2007–2024) and ran the research. Its outcome is in **[REAL_DATA_VALIDATION_REPORT.md](REAL_DATA_VALIDATION_REPORT.md)**, and the headline is:
+>
+> **NO STRATEGY VALIDATED.** The leading candidate lost to a passive equal-weight portfolio on a final holdout (dev Sharpe +0.421 → holdout −0.067). Read that report for anything concerning performance.
 
-There is no market data in the repository. No model has been trained on real prices. No backtest has been run on a real instrument. Every number in this report comes from **synthetic data with known ground truth**, which is the correct way to verify that machinery is *correct*, and says nothing about whether any strategy is *profitable*.
+**At the time this engineering audit was written, no component had been validated on real market data.** Every number *in this document* comes from synthetic data.
 
-Therefore:
+Therefore, and still true today:
 
 - The production model currently selected is: **none**.
 - The expected return of this system is: **unknown**.
-- The out-of-sample performance on Indian equities is: **unmeasured**.
+- Live trading eligibility: **BLOCKED_INSUFFICIENT_DATA** (1 of 23 gates passing).
 
-Anyone reading a Sharpe ratio out of this codebase today is reading a property of a random number generator.
+Anyone reading a Sharpe ratio out of *this* document is reading a property of a random number generator.
 
 ---
 
@@ -305,6 +309,10 @@ IID resampling **understated the risk of ruin by a factor of two**. Any risk fig
 **None.**
 
 No model is approved, deployed, or deployable. `TRADING_MODE` remains `paper`. Live trading must stay disabled.
+
+This was subsequently confirmed against real data rather than merely asserted: ten candidates were tested on 19 years of NSE history and none reached significance, with the leading candidate then failing its final holdout. See [REAL_DATA_VALIDATION_REPORT.md](REAL_DATA_VALIDATION_REPORT.md) §5.
+
+A machine-readable gate now enforces this. `app/governance/eligibility.py` evaluates 23 fail-closed gates and currently reports `BLOCKED_INSUFFICIENT_DATA` with 1 gate passing. Unrecorded evidence counts as failure, an exception inside a gate counts as failure, and the state is a derived property — there is no code path that assigns `LIVE_ELIGIBLE`.
 
 ---
 

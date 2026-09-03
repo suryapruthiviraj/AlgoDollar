@@ -379,39 +379,31 @@ class FeatureEngine:
         stock_ret = np.log(stock_prices / stock_prices.shift(1))
         nifty_ret = np.log(nifty_prices / nifty_prices.shift(1))
 
-        aligned_stock = stock_ret.reindex(nifty_ret.index)
-
-        def _beta(arr: np.ndarray) -> float:
-            if np.isnan(arr).any():
-                return np.nan
-            x = arr[:window]
-            y = arr[window:]
-            if len(x) < window // 2 or np.var(x) == 0:
-                return np.nan
-            return float(np.cov(y, x)[0, 1] / np.var(x))
-
-        combined = pd.concat([nifty_ret, aligned_stock], axis=1)
+        combined = pd.concat([nifty_ret, stock_ret.reindex(nifty_ret.index)], axis=1)
         combined.columns = ["nifty", "stock"]
 
-        def _rolling_beta_row(idx: int) -> float:
-            start = max(0, idx - window)
-            chunk = combined.iloc[start : idx + 1]
-            if len(chunk) < window // 2:
-                return np.nan
-            nifty_chunk = chunk["nifty"].dropna()
-            stock_chunk = chunk["stock"].dropna()
-            common_idx = nifty_chunk.index.intersection(stock_chunk.index)
-            if len(common_idx) < window // 4:
-                return np.nan
-            n = nifty_chunk.loc[common_idx].values
-            s = stock_chunk.loc[common_idx].values
-            var_n = np.var(n)
-            if var_n < 1e-12:
-                return np.nan
-            return float(np.cov(s, n)[0, 1] / var_n)
+        # Vectorized rolling OLS slope:
+        #     beta = Cov(stock, nifty) / Var(nifty)
+        # computed from rolling moments. The previous implementation looped in
+        # Python over every bar, re-slicing and re-intersecting indices each
+        # time — O(T * window) with pandas overhead per step, which made
+        # feature generation over a real universe take hours.
+        min_obs = max(window // 2, 2)
+        n = combined["nifty"]
+        s = combined["stock"]
 
-        beta_values = [_rolling_beta_row(i) for i in range(len(combined))]
-        return pd.Series(beta_values, index=combined.index, name="beta_30d")
+        roll = dict(window=window, min_periods=min_obs)
+        mean_n = n.rolling(**roll).mean()
+        mean_s = s.rolling(**roll).mean()
+        mean_ns = (n * s).rolling(**roll).mean()
+        mean_nn = (n * n).rolling(**roll).mean()
+
+        cov = mean_ns - mean_n * mean_s
+        var = mean_nn - mean_n * mean_n
+
+        beta = cov / var.where(var > 1e-12)
+        beta.name = "beta_30d"
+        return beta
 
     # ------------------------------------------------------------------
     # Master compute

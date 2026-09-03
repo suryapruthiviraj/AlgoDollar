@@ -10,19 +10,31 @@
 
 ---
 
-## Current status: research infrastructure, not a validated strategy
+## Current status: NO STRATEGY VALIDATED
 
-**No component of this system has been validated on real market data.** There is no market
-data in this repository, no trained model, and no backtest of a real instrument. The
-infrastructure to conduct that research honestly now exists; the research itself has not
-been done.
+The research has now been run on **19 years of real NSE data** (99 symbols, 2007–2024).
+Ten candidates — eight rule-based baselines and two machine-learning models — were tested
+under purged walk-forward validation with realistic costs.
+
+**None reached statistical significance.** The leading candidate was then evaluated once on
+a final holdout reserved from every selection decision, and **lost to a passive
+equal-weight portfolio of the same stocks**:
+
+| | Development (2007–2021) | Final holdout (2022–2024) |
+|---|---:|---:|
+| Excess vs equal-weight | +4.35%/yr | **−0.61%/yr** |
+| Sharpe | +0.421 | **−0.067** |
+| Deflated Sharpe Ratio | 0.461 | **0.045** |
 
 | | Status |
 |---|---|
 | Production model selected | **None** |
-| Expected return | **Unknown** |
-| Out-of-sample performance on Indian equities | **Unmeasured** |
-| Live trading | **Disabled**, and must remain so |
+| Live trading eligibility | **BLOCKED_INSUFFICIENT_DATA** (1 of 23 gates passing) |
+| Long-term engine | **Unvalidatable** — no point-in-time fundamentals available |
+| Intraday engine | **Unvalidatable** — only ~60 days of granular history available |
+| Execution layer | **Unsafe** — 13 critical defects, never connected to a live broker |
+
+Full evidence: **[docs/REAL_DATA_VALIDATION_REPORT.md](docs/REAL_DATA_VALIDATION_REPORT.md)**
 
 An adversarial self-audit found and fixed a large number of defects, several of which would
 have lost money in production — regime detection that had no effect on allocation, user risk

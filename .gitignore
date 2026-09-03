@@ -112,3 +112,7 @@ logs/
 *.pyo
 *.pyd
 Thumbs.db
+
+# Downloaded market data — reproducible via app/data/providers.py, not source.
+# 39MB of vendor parquet does not belong in git; the acquisition code does.
+data_cache/
