@@ -512,3 +512,156 @@ async def run_signal_cycle(
         warnings=run.warnings,
         errors=run.errors,
     )
+
+
+# ── Allocated rebalance ───────────────────────────────────────────────────────
+
+class RebalanceRequest(BaseModel):
+    total_capital: float
+    cash: Optional[float] = None
+    contribution: float = 0.0
+    current_drawdown_pct: float = 0.0
+    daily_pnl_pct: float = 0.0
+    # Produces the target and every reason without submitting anything. It
+    # weakens no gate: everything it skips lives downstream of the submission.
+    dry_run: bool = True
+
+
+class RebalanceResponse(BaseModel):
+    """
+    The full allocation decision.
+
+    `capital_pct` and `risk_budget_pct` are reported side by side per strategy
+    because they answer different questions — how many rupees, versus how much
+    of the volatility budget. They are not expected to match, and a divergence
+    is information rather than an error.
+    """
+
+    ran: bool
+    no_trade: bool
+    summary: str
+    fingerprint: Optional[str] = None
+    strategies: list[dict] = []
+    positions: list[dict] = []
+    cash_reserve: float = 0.0
+    cash_reserve_pct: float = 0.0
+    expected_portfolio_vol: Optional[float] = None
+    expected_turnover_pct: float = 0.0
+    estimated_cost: float = 0.0
+    binding_constraints: list[str] = []
+    reasons: list[str] = []
+    warnings: list[str] = []
+    submitted: int = 0
+    blocked: int = 0
+    outcomes: list[dict] = []
+    errors: list[str] = []
+
+
+@router.post("/rebalance", response_model=RebalanceResponse)
+async def rebalance(
+    body: RebalanceRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+) -> RebalanceResponse:
+    """
+    Run one allocated rebalance: signals -> target portfolio -> orders.
+
+    Unlike `/run-cycle`, which sizes each signal on its own, this makes a single
+    PORTFOLIO decision — so sector caps, correlation, turnover and the cash
+    floor are all applied across the whole book at once.
+
+    Orders still go through ExecutionService, so every downstream gate applies.
+    The allocator decides what to hold; it has no route to a broker.
+    """
+    from app.engine.allocated_cycle import run_allocated_cycle
+
+    pipeline = getattr(request.app.state, "trading_pipeline", None)
+    stack = getattr(request.app.state, "execution_stack", None)
+    service = getattr(request.app.state, "execution_service", None)
+
+    if pipeline is None or service is None:
+        return RebalanceResponse(
+            ran=False, no_trade=True,
+            summary=(
+                "The trading pipeline is not available; no allocation was made. "
+                "This is NOT a statement that cash is the right answer."
+            ),
+            errors=["trading pipeline unavailable at startup"],
+        )
+
+    if body.total_capital < 0:
+        raise HTTPException(status_code=400, detail="total_capital cannot be negative")
+
+    positions: list[dict] = []
+    try:
+        raw = await stack.broker.get_positions() if stack else []
+        for p in raw or []:
+            positions.append({
+                "symbol": p.get("symbol") or p.get("tradingsymbol"),
+                "quantity": int(p.get("quantity", 0) or 0),
+                "average_price": float(p.get("average_price", 0.0) or 0.0),
+                "last_price": float(
+                    p.get("last_price") or p.get("average_price") or 0.0
+                ),
+                "strategy": p.get("strategy", "unknown"),
+            })
+    except Exception as exc:  # noqa: BLE001
+        # A book we cannot read is NOT an empty book. Allocating against an
+        # assumed-flat portfolio would double every position we already hold.
+        return RebalanceResponse(
+            ran=False, no_trade=True,
+            summary=(
+                "Current positions could not be read, so no allocation was "
+                "attempted. Treating an unreadable book as empty would size "
+                "every target as if nothing were held."
+            ),
+            errors=[f"position read failed: {exc!r}"],
+        )
+
+    kill_active = False
+    try:
+        if stack is not None:
+            kill_active, _ = stack.service.kill_switch.is_active()
+    except Exception:  # noqa: BLE001
+        kill_active = True  # unreadable switch counts as engaged
+
+    result = await run_allocated_cycle(
+        pipeline=pipeline,
+        execution_service=service,
+        total_capital=body.total_capital,
+        cash=body.cash if body.cash is not None else body.total_capital,
+        positions=positions,
+        current_drawdown_pct=body.current_drawdown_pct,
+        daily_pnl_pct=body.daily_pnl_pct,
+        kill_switch_active=kill_active,
+        trading_permitted=bool(stack.trading_permitted) if stack else False,
+        dry_run=body.dry_run,
+    )
+
+    t = result.target
+    if t is None:
+        return RebalanceResponse(
+            ran=True, no_trade=True, summary=result.summary(), errors=result.errors,
+        )
+
+    d = t.as_dict()
+    return RebalanceResponse(
+        ran=True,
+        no_trade=t.is_no_trade,
+        summary=result.summary(),
+        fingerprint=t.input_fingerprint,
+        strategies=d["strategies"],
+        positions=d["positions"],
+        cash_reserve=t.cash_reserve,
+        cash_reserve_pct=t.cash_reserve_pct,
+        expected_portfolio_vol=t.expected_portfolio_vol,
+        expected_turnover_pct=t.expected_turnover_pct,
+        estimated_cost=t.estimated_cost,
+        binding_constraints=[str(c) for c in t.binding_constraints],
+        reasons=t.reasons,
+        warnings=t.warnings,
+        submitted=result.submitted,
+        blocked=result.blocked,
+        outcomes=result.outcomes,
+        errors=result.errors,
+    )
