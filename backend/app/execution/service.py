@@ -722,6 +722,14 @@ class ExecutionService:
                     order_row_id, self.broker, str(order_id), mode=self.mode.value,
                 )
                 rec.final_state = sync.status or rec.final_state
+                if sync.broker_reject_reason:
+                    # The venue's own words. An order can pass every one of our
+                    # gates and still be refused at the exchange; without this
+                    # the dashboard would report it as submitted.
+                    rec.broker_response = {
+                        "reject_reason": sync.broker_reject_reason,
+                        "status": sync.status,
+                    }
                 rec.fill_quantity = sync.filled_quantity
                 rec.average_fill_price = sync.average_fill_price
                 if sync.errors:

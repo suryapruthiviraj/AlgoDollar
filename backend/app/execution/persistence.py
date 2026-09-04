@@ -93,6 +93,10 @@ class FillSyncResult:
     new_fills: int = 0
     realized_pnl: float = 0.0
     cash_after: Optional[float] = None
+    #: The venue's OWN refusal reason, when it refused. Distinct from our
+    #: pre-trade checks — those never ran for an order the broker turned down,
+    #: so without this the audit trail cannot say why it was rejected.
+    broker_reject_reason: Optional[str] = None
     errors: list[str] = field(default_factory=list)
 
 
@@ -317,6 +321,8 @@ class SqlAlchemyExecutionPersistence:
                 reject = status.get("reject_reason") or status.get("message")
                 if broker_status == "REJECTED" and reject:
                     row.rejection_reason = str(reject)[:2000]
+                if reject:
+                    out.broker_reject_reason = str(reject)[:2000]
 
                 if row.status != prev:
                     session.add(OrderStateTransition(
