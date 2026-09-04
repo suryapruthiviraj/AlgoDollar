@@ -138,6 +138,7 @@ class ExecutionStack:
     audit: AuditJournal
     startup_ok: bool
     startup_reason: Optional[str] = None
+    persistence: Optional[Any] = None
 
     @property
     def trading_permitted(self) -> bool:
@@ -158,6 +159,10 @@ async def build_execution_stack(
     initial_cash: float = 1_000_000.0,
     extra_kill_switch_probes: tuple[Callable[[], bool], ...] = (),
     run_recovery: bool = True,
+    persistence: Optional[Any] = None,
+    order_store: Optional[Any] = None,
+    paper_state_path: Optional[str] = None,
+    paper_clock: Optional[Callable[[], Any]] = None,
 ) -> ExecutionStack:
     """
     Build the execution stack and run startup reconciliation.
@@ -211,10 +216,24 @@ async def build_execution_stack(
     else:
         from app.broker.paper import PaperBroker
 
-        broker = PaperBroker(data_broker=data_broker, initial_cash=initial_cash)
+        # state_path is what makes the paper book survive a restart. Without it
+        # PaperBroker warns and starts empty, which then disagrees with the
+        # database on the next start — reconciliation would (correctly) refuse
+        # to open the gate, so a restartable paper run needs this.
+        broker = PaperBroker(
+            data_broker=data_broker,
+            initial_cash=initial_cash,
+            state_path=paper_state_path,
+            clock=paper_clock,
+        )
 
     safety = ExecutionSafety(store)
-    order_manager = OrderManager(safety, store=InMemoryOrderStore())
+    # InMemoryOrderStore only when nothing durable was supplied. It is a real
+    # fallback, not the production default: a process that restarts with an
+    # in-memory order store has forgotten every in-flight order, which is why
+    # `durable=False` on that store makes reconciliation refuse to report OK
+    # and the trading gate stays shut.
+    order_manager = OrderManager(safety, store=order_store or InMemoryOrderStore())
 
     engine = ReconciliationEngine(store, local_state=local_state)
     recovery = RecoveryManager(engine, local_state=local_state)
@@ -238,6 +257,7 @@ async def build_execution_stack(
         audit=audit,
         eligibility_provider=_eligibility,
         live_authorized=live_authorized,
+        persistence=persistence,
     )
 
     startup_ok, reason = True, None
@@ -254,6 +274,7 @@ async def build_execution_stack(
         audit=audit,
         startup_ok=startup_ok,
         startup_reason=reason,
+        persistence=persistence,
     )
 
 

@@ -1206,6 +1206,12 @@ def test_REGRESSION_the_app_routes_orders_through_the_execution_layer():
     place an order can originate, and it is reachable from the API.  The check
     is anchored on real import statements: the naive substring grep this test
     used to run also matched main.py's own comment ABOUT the old defect.
+
+    main.py builds the stack via ``app.execution.runtime.build_production_stack``
+    rather than ``bootstrap.build_execution_stack``.  Both route orders through
+    the execution layer, which is what this test guards; the difference is that
+    bootstrap's collaborators all default to None, which produced a stack that
+    was wired but could never trade (no prices, no local state, no persistence).
     """
     import ast
 
@@ -1213,7 +1219,7 @@ def test_REGRESSION_the_app_routes_orders_through_the_execution_layer():
     main_imports = [ln for ln in _import_lines("app/main.py")
                     if _EXECUTION_PACKAGE.search(ln)]
     assert main_imports == [
-        "from app.execution.bootstrap import build_execution_stack"], main_imports
+        "from app.execution.runtime import build_production_stack"], main_imports
 
     # ...and it is a genuine import node, not a string that reads like one.
     imported = {
@@ -1222,9 +1228,9 @@ def test_REGRESSION_the_app_routes_orders_through_the_execution_layer():
         if isinstance(node, ast.ImportFrom) and node.module
         for alias in node.names
     }
-    assert "app.execution.bootstrap.build_execution_stack" in imported
-    from app.execution.bootstrap import build_execution_stack  # noqa: F401
-    assert "build_execution_stack(" in main_src, "imported but never called"
+    assert "app.execution.runtime.build_production_stack" in imported
+    from app.execution.runtime import build_production_stack  # noqa: F401
+    assert "build_production_stack(" in main_src, "imported but never called"
     assert "app.state.execution_service" in main_src
 
     # The robustness fix itself: prose still mentions the packages, and the

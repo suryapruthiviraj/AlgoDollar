@@ -60,6 +60,17 @@ class Settings(BaseSettings):
     # ── Trading ───────────────────────────────────────────────────────────────
     trading_mode: Literal["paper", "live"] = "paper"
 
+    # Where the paper broker persists its book. Without it the simulated
+    # positions and cash are lost on restart, and the next start would find the
+    # broker disagreeing with the database — reconciliation would refuse to open
+    # the trading gate, which is correct but makes paper trading unrestartable.
+    paper_state_path: Optional[str] = "data/paper_broker_state.json"
+
+    # Append-only JSONL record of every execution attempt, including the ones
+    # that were refused. Refusals are the more interesting half: they are the
+    # evidence that the gates are doing something.
+    execution_audit_path: Optional[str] = "data/execution_audit.jsonl"
+
     # ── AI ───────────────────────────────────────────────────────────────────
     anthropic_api_key: Optional[str] = None
 

@@ -219,8 +219,8 @@ class SqlAlchemyLocalStateStore:
     * ``user_id=None`` means "this deployment maps one broker account to the
       whole database"; a warning is logged because it is rarely what a
       multi-tenant deployment wants.
-    * Local cash is taken from the most recent ``CapitalAllocation`` row.
-      If there is no such row, cash is UNAVAILABLE -- deliberately, because
+    * Local cash is the ``AccountCash`` balance for this trading mode. If
+      there is no such row, cash is UNAVAILABLE -- deliberately, because
       "no cash record" must not be reconciled as "cash is 0.0".
     * ``Position`` has no ``product`` column, so the broker's product
       (MIS/CNC/NRML) is inferred from ``strategy``.  A wrong inference splits
@@ -229,11 +229,23 @@ class SqlAlchemyLocalStateStore:
       real ``product`` column to remove the guess.
     """
 
-    def __init__(self, session: Any, user_id: Optional[int] = None) -> None:
+    def __init__(
+        self,
+        session: Any,
+        user_id: Optional[int] = None,
+        *,
+        trading_mode: Optional[str] = None,
+    ) -> None:
         if session is None:
             raise ValueError("SqlAlchemyLocalStateStore requires a session")
         self._session = session
         self._user_id = user_id
+        # Defaults to the configured mode rather than being hard-coded, so a
+        # paper process reads the paper balance and a live one the live balance.
+        if trading_mode is None:
+            from app.core.config import settings as _settings
+            trading_mode = str(_settings.trading_mode)
+        self._trading_mode = trading_mode
         if user_id is None:
             logger.warning(
                 "SqlAlchemyLocalStateStore built without a user_id: reconciling "
@@ -323,20 +335,37 @@ class SqlAlchemyLocalStateStore:
         return out
 
     async def get_cash(self) -> dict:
+        """
+        The account's cash BALANCE, from ``AccountCash``.
+
+        This used to read the newest ``CapitalAllocation`` row, which is a
+        different quantity entirely: a monthly capital budget, not a balance.
+        Reconciling the broker's cash against a budget compares two unrelated
+        numbers, so it produced a permanent false MISMATCH — and a permanent
+        false mismatch blocks trading forever while telling you nothing.
+
+        Scoped to the trading mode, so a paper balance can never be compared
+        against a live account or vice versa.
+        """
         from sqlalchemy import select
 
-        from ..database.models import CapitalAllocation
+        from ..database.models import AccountCash
 
         stmt = self._scoped(
-            select(CapitalAllocation).order_by(CapitalAllocation.month_year.desc()).limit(1),
-            CapitalAllocation,
+            select(AccountCash).where(AccountCash.trading_mode == self._trading_mode),
+            AccountCash,
         )
         row = (await self._execute(stmt, "cash")).scalars().first()
         if row is None:
             raise LocalStateUnavailable(
-                "no CapitalAllocation row: local cash is unknown (NOT zero)"
+                f"no AccountCash row for trading_mode={self._trading_mode!r}: "
+                "local cash is unknown (which is NOT the same as zero)"
             )
-        return {"cash": float(row.cash_amount or 0.0)}
+        return {
+            "cash": float(row.cash or 0.0),
+            "margin_available": float(row.cash or 0.0) - float(row.reserved or 0.0),
+            "margin_used": float(row.reserved or 0.0),
+        }
 
 
 def _product_for_strategy(strategy: Optional[str]) -> str:

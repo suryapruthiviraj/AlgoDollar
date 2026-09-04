@@ -119,3 +119,10 @@ data_cache/
 
 # TypeScript incremental build cache — regenerated on every build.
 *.tsbuildinfo
+
+# Runtime execution state. NOT source, and never to be committed:
+# - paper_broker_state.json is a simulated account's positions and cash
+# - execution_audit.jsonl is the append-only record of every order attempt
+# Both are per-deployment, both are regenerated, and the audit journal is
+# operational evidence rather than something a clone should inherit.
+backend/data/

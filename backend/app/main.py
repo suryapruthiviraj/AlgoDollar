@@ -110,9 +110,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # an unhandled error somewhere upstream.
     app.state.execution_stack = None
     try:
-        from app.execution.bootstrap import build_execution_stack
+        # build_production_stack, NOT build_execution_stack(). The latter takes
+        # every collaborator as an argument and defaults them all to None, which
+        # is correct for a test but produced a stack that could never trade:
+        # no data_broker meant the paper broker had no prices, no local_state
+        # meant reconciliation reported UNAVAILABLE and the gate never opened,
+        # and no persistence meant nothing an order did was written down.
+        from app.execution.runtime import build_production_stack
 
-        stack = await build_execution_stack()
+        stack = await build_production_stack(
+            paper_state_path=settings.paper_state_path,
+            audit_path=settings.execution_audit_path,
+        )
         app.state.execution_stack = stack
         app.state.execution_service = stack.service
 

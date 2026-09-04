@@ -222,6 +222,7 @@ class ExecutionService:
         audit: Optional[AuditJournal] = None,
         eligibility_provider: Optional[Callable[[], Any]] = None,
         live_authorized: bool = False,
+        persistence: Optional[Any] = None,
     ) -> None:
         self.mode = TradingMode(trading_mode)
         self.broker = broker
@@ -231,6 +232,17 @@ class ExecutionService:
         self.audit = audit or AuditJournal(InMemoryAuditSink())
         self.eligibility_provider = eligibility_provider
         self.live_authorized = bool(live_authorized)
+        # Durable record of every order, fill, position and cash movement.
+        # Attached HERE, on the single authoritative path, so an order cannot
+        # be placed without being recorded — a caller cannot forget, because a
+        # caller cannot reach the broker any other way.
+        #
+        # None means "no durable record configured". That is legitimate for a
+        # unit test, and it is why the durable-state requirement is enforced by
+        # the RECONCILIATION gate rather than here: with no local state to
+        # compare, reconciliation reports UNAVAILABLE and the trading gate stays
+        # shut, so a production process cannot quietly trade unrecorded.
+        self.persistence = persistence
 
         self._assert_broker_matches_mode()
 
@@ -589,6 +601,7 @@ class ExecutionService:
         Risk validation lives inside OrderManager.submit_order, which consults
         ExecutionSafety. It is not duplicated here.
         """
+        order_row_id: Optional[int] = None
         try:
             order_intent = self._to_order_intent(
                 signal, rec, exchange=exchange, product=product,
@@ -596,6 +609,37 @@ class ExecutionService:
                 reference_price=reference_price,
                 idempotency_key=idempotency_key,
             )
+
+            # Claim the idempotency key BEFORE the broker is called. If this
+            # order has been submitted before — a retry, a redelivered task, a
+            # second worker racing on the same signal — we stop here rather
+            # than sending a duplicate to the exchange. The claim is a UNIQUE
+            # constraint, so two concurrent claimants cannot both win.
+            #
+            # A failure to claim BLOCKS. Not being able to prove this is not a
+            # duplicate is not permission to assume it is not one.
+            if self.persistence is not None:
+                claim = await self.persistence.claim_idempotency_key(
+                    getattr(order_intent, "client_order_id", None),
+                    intent=order_intent,
+                    quantity=int(position_size),
+                    mode=self.mode.value,
+                )
+                order_row_id = claim.order_row_id
+                if claim.duplicate:
+                    rec.outcome = ExecutionOutcome.BLOCKED_DUPLICATE.value
+                    rec.rejection_reason = (
+                        f"duplicate submission: client_order_id "
+                        f"{claim.client_order_id} was already submitted. No "
+                        f"second order sent."
+                    )
+                    rec.idempotency_key = claim.client_order_id
+                    self.audit.record(rec)
+                    return ExecutionResult(
+                        ExecutionOutcome.BLOCKED_DUPLICATE, rec,
+                        reason=rec.rejection_reason,
+                    )
+
             order_id = await self.order_manager.submit_order(
                 order_intent, int(position_size), self.broker, **risk_context
             )
@@ -603,6 +647,7 @@ class ExecutionService:
             rec.outcome = ExecutionOutcome.BLOCKED_KILL_SWITCH.value
             rec.kill_switch_active = True
             rec.rejection_reason = str(exc)
+            await self._persist_block(order_row_id, "BLOCKED_KILL_SWITCH", str(exc))
             self.audit.record(rec)
             return ExecutionResult(
                 ExecutionOutcome.BLOCKED_KILL_SWITCH, rec, reason=str(exc)
@@ -612,6 +657,12 @@ class ExecutionService:
             rec.outcome = ExecutionOutcome.AMBIGUOUS.value
             rec.rejection_reason = str(exc)
             rec.final_state = "UNKNOWN"
+            # UNKNOWN is written DURABLY, not just to the audit log. This is the
+            # one state that must survive the process: on the next start,
+            # reconciliation has to know there is an order whose fate was never
+            # established, so it can ask the broker by client_order_id instead
+            # of assuming either outcome.
+            await self._persist_block(order_row_id, "UNKNOWN", str(exc))
             self.audit.record(rec)
             logger.error(
                 "AMBIGUOUS order state for %s — reconciliation required before "
@@ -624,6 +675,9 @@ class ExecutionService:
             rec.outcome = ExecutionOutcome.BLOCKED_RISK.value
             rec.risk_checks_passed = False
             rec.rejection_reason = f"{type(exc).__name__}: {exc}"
+            await self._persist_block(
+                order_row_id, "BLOCKED_RISK", rec.rejection_reason
+            )
             self.audit.record(rec)
             return ExecutionResult(
                 ExecutionOutcome.BLOCKED_RISK, rec, reason=rec.rejection_reason
@@ -644,6 +698,9 @@ class ExecutionService:
                 "order manager declined to submit and recorded no reason; see "
                 "order_manager logs for the specific gate"
             )
+            await self._persist_block(
+                order_row_id, "BLOCKED_RISK", rec.rejection_reason
+            )
             self.audit.record(rec)
             return ExecutionResult(
                 ExecutionOutcome.BLOCKED_RISK, rec, reason=rec.rejection_reason
@@ -654,10 +711,49 @@ class ExecutionService:
         rec.idempotency_key = rec.idempotency_key or str(order_id)
         rec.outcome = ExecutionOutcome.SUBMITTED.value
         rec.final_state = "SUBMITTED"
+
+        # Ask the broker what it actually did, then persist THAT. An accepted
+        # order is not a filled order, so nothing here is inferred from the
+        # fact that submit_order returned without raising.
+        if self.persistence is not None and order_row_id is not None:
+            try:
+                await self.persistence.attach_broker_order_id(order_row_id, str(order_id))
+                sync = await self.persistence.sync_from_broker(
+                    order_row_id, self.broker, str(order_id), mode=self.mode.value,
+                )
+                rec.final_state = sync.status or rec.final_state
+                rec.fill_quantity = sync.filled_quantity
+                rec.average_fill_price = sync.average_fill_price
+                if sync.errors:
+                    # The money may already have moved. Surfacing this is what
+                    # lets reconciliation find the divergence; swallowing it is
+                    # what would hide it.
+                    rec.error = "; ".join(sync.errors)[:2000]
+                    logger.error(
+                        "order %s submitted but its outcome was not fully "
+                        "recorded: %s", order_id, rec.error,
+                    )
+            except Exception as exc:  # noqa: BLE001
+                rec.error = f"post-submission persistence failed: {exc!r}"
+                logger.exception(
+                    "order %s reached the broker but could not be recorded", order_id
+                )
+
         self.audit.record(rec)
         return ExecutionResult(
             ExecutionOutcome.SUBMITTED, rec, broker_order_id=str(order_id)
         )
+
+    async def _persist_block(
+        self, order_row_id: Optional[int], state: str, reason: str
+    ) -> None:
+        """Record a blocked order durably. Never raises into the order path."""
+        if self.persistence is None or order_row_id is None:
+            return
+        try:
+            await self.persistence.record_block(order_row_id, state, reason)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("could not persist block for order %s: %s", order_row_id, exc)
 
 
 # ---------------------------------------------------------------------------

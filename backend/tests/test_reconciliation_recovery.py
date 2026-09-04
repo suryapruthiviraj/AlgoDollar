@@ -1041,7 +1041,7 @@ class BrokenSession:
 
 async def _seed(session) -> int:
     from app.database.models import (
-        CapitalAllocation,
+        AccountCash,
         Order,
         Position,
         Trade,
@@ -1077,8 +1077,13 @@ async def _seed(session) -> int:
             transaction_type="BUY", quantity=qty, price=px, value=qty * px,
             net_value=qty * px, strategy="intraday",
         ))
-    session.add(CapitalAllocation(
-        user_id=user.id, month_year="2026-09", cash_amount=250_000.0,
+    # AccountCash, not CapitalAllocation. Local cash used to be read from the
+    # newest CapitalAllocation row, which is a monthly capital BUDGET rather
+    # than a balance — reconciling the broker's cash against a budget compares
+    # two unrelated numbers and produces a permanent false MISMATCH.
+    session.add(AccountCash(
+        user_id=user.id, trading_mode="paper", cash=250_000.0,
+        reserved=0.0, realized_pnl=0.0, total_costs=0.0,
     ))
     await session.commit()
     return user.id
@@ -1108,10 +1113,20 @@ class TestSqlAlchemyLocalStateStore:
         assert sum(r["quantity"] for r in rows) == 100
         assert all(r["order_id"] == "O1" for r in rows)
 
-    async def test_cash_comes_from_the_latest_allocation(self, orm_session):
+    async def test_cash_comes_from_the_account_balance(self, orm_session):
         user_id = await _seed(orm_session)
-        cash = await SqlAlchemyLocalStateStore(orm_session, user_id).get_cash()
-        assert cash == {"cash": 250_000.0}
+        cash = await SqlAlchemyLocalStateStore(
+            orm_session, user_id, trading_mode="paper"
+        ).get_cash()
+        assert cash["cash"] == 250_000.0
+        assert cash["margin_used"] == 0.0
+
+    async def test_cash_is_scoped_to_the_trading_mode(self, orm_session):
+        """A paper balance must never be reported for a live account."""
+        user_id = await _seed(orm_session)
+        store = SqlAlchemyLocalStateStore(orm_session, user_id, trading_mode="live")
+        with pytest.raises(LocalStateUnavailable):
+            await store.get_cash()
 
     async def test_absent_cash_row_raises_rather_than_returning_zero(self, orm_session):
         store = SqlAlchemyLocalStateStore(orm_session, 999)
