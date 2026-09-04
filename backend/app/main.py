@@ -171,8 +171,31 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     yield
 
     # Shutdown
+    #
+    # Ordered deliberately: release the execution stack (and the Redis clients
+    # it opened) BEFORE disposing the database engine, because closing the
+    # stack can still want to write. Each step is guarded so one failure does
+    # not abort the rest — a shutdown path that raises turns a clean stop into
+    # a crash and leaves connections open.
     log.info("algodollar_stopping")
-    await engine.dispose()
+
+    # A distinct name: `stack` is already bound to the ExecutionStack built
+    # during startup, and rebinding it to Optional[Any] here is what mypy
+    # objected to.
+    running_stack = getattr(app.state, "execution_stack", None)
+    if running_stack is not None and hasattr(running_stack, "aclose"):
+        try:
+            await running_stack.aclose()
+            log.info("execution_stack_closed")
+        except Exception as exc:  # noqa: BLE001
+            log.error("execution_stack_close_failed", error=str(exc))
+
+    try:
+        await engine.dispose()
+        log.info("database_engine_disposed")
+    except Exception as exc:  # noqa: BLE001
+        log.error("database_dispose_failed", error=str(exc))
+
     log.info("algodollar_stopped")
 
 

@@ -139,6 +139,30 @@ class ExecutionStack:
     startup_ok: bool
     startup_reason: Optional[str] = None
     persistence: Optional[Any] = None
+    #: Redis clients this stack opened, so shutdown can close them.
+    redis_clients: tuple[Any, ...] = ()
+
+    async def aclose(self) -> None:
+        """
+        Release what this stack opened. Safe to call more than once.
+
+        Every step is individually guarded: one uncooperative client must not
+        prevent the rest from being released, and a shutdown path that raises
+        turns a clean stop into a crash.
+        """
+        for client in self.redis_clients:
+            for method in ("aclose", "close"):
+                fn = getattr(client, method, None)
+                if fn is None:
+                    continue
+                try:
+                    result = fn()
+                    if hasattr(result, "__await__"):
+                        await result
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("redis client close failed: %s", exc)
+                break
+        self.redis_clients = ()
 
     @property
     def trading_permitted(self) -> bool:

@@ -308,3 +308,128 @@ class TestSchemaSupportsTheGuarantees:
         assert ("trade_id_broker", "user_id") in constraints, (
             "without this, replaying a broker trade book double-counts fills"
         )
+
+
+class TestSchemaAndShutdown:
+    """Deployment-surface behaviour: schema drift and clean release."""
+
+    async def test_a_clean_database_reports_no_drift(self, sqlite_factory):
+        """The models and a freshly created schema must agree."""
+        import app.database.session as sess
+
+        engine = sqlite_factory.kw["bind"]
+        from sqlalchemy import inspect
+
+        def _check(conn):
+            from app.database.models import Base
+
+            inspector = inspect(conn)
+            existing = set(inspector.get_table_names())
+            missing = [t for t in Base.metadata.tables if t not in existing]
+            assert not missing, f"tables never created: {missing}"
+
+        async with engine.begin() as conn:
+            await conn.run_sync(_check)
+        assert callable(sess.verify_schema)
+
+    async def test_drift_is_reported_rather_than_raised(self):
+        """
+        A stale schema must be NAMED, not discovered at the first query.
+
+        Reported rather than raised on purpose: refusing to start would take
+        down a read-only API that is otherwise fine, and the execution path
+        already fails closed on a persistence error.
+        """
+        from sqlalchemy import text
+        from sqlalchemy.ext.asyncio import create_async_engine
+
+        import app.database.session as sess
+        from app.database.models import Base
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        original = sess.engine
+        sess.engine = engine
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            assert await sess.verify_schema() == []
+
+            async with engine.begin() as conn:
+                await conn.execute(text("DROP TABLE account_cash"))
+            drift = await sess.verify_schema()
+            assert any("account_cash" in d for d in drift), drift
+        finally:
+            sess.engine = original
+            await engine.dispose()
+
+    async def test_shutdown_closes_what_startup_opened(
+        self, sqlite_factory, monkeypatch
+    ):
+        """
+        Redis clients opened by the stack must be released.
+
+        Without a handle on them they were unreachable, so every restart leaked
+        its connections and a container cycling repeatedly would exhaust the
+        server's client limit.
+        """
+        import app.execution.runtime as runtime_mod
+        from app.main import create_app
+
+        closed: list[str] = []
+
+        class FakeRedis:
+            def __init__(self, name: str) -> None:
+                self.name = name
+
+            async def aclose(self) -> None:
+                closed.append(self.name)
+
+        real = runtime_mod.build_production_stack
+
+        async def build(**kw):
+            kw["session_factory"] = sqlite_factory
+            kw["data_broker"] = DeterministicFeed()
+            kw["paper_clock"] = lambda: MARKET_OPEN_IST
+            kw["paper_state_path"] = None
+            stack = await real(**kw)
+            stack.redis_clients = (FakeRedis("async"), FakeRedis("sync"))
+            return stack
+
+        monkeypatch.setattr(runtime_mod, "build_production_stack", build)
+
+        app = create_app()
+        async with app.router.lifespan_context(app):
+            assert app.state.execution_stack is not None
+
+        assert sorted(closed) == ["async", "sync"], (
+            f"shutdown released {closed}; the rest leaked"
+        )
+
+    async def test_closing_twice_is_safe(self, sqlite_factory):
+        """Shutdown may run more than once; it must not raise."""
+        from tests.test_e2e_paper_trade import make_stack
+
+        stack = await make_stack(sqlite_factory)
+        await stack.aclose()
+        await stack.aclose()
+
+    async def test_an_uncooperative_client_does_not_abort_shutdown(
+        self, sqlite_factory
+    ):
+        """One bad client must not prevent the others being released."""
+        from tests.test_e2e_paper_trade import make_stack
+
+        released: list[str] = []
+
+        class Bad:
+            async def aclose(self):
+                raise ConnectionError("already gone")
+
+        class Good:
+            async def aclose(self):
+                released.append("good")
+
+        stack = await make_stack(sqlite_factory)
+        stack.redis_clients = (Bad(), Good())
+        await stack.aclose()
+        assert released == ["good"]

@@ -207,6 +207,12 @@ async def build_production_stack(
         paper_clock=paper_clock,
     )
 
+    # Hang the Redis clients off the stack so shutdown can close them. Without
+    # a handle they were unreachable, so every restart leaked its connections
+    # and a container that cycled repeatedly would exhaust the server's client
+    # limit.
+    stack.redis_clients = tuple(c for c in (aredis, sredis) if c is not None)
+
     # Persist the reconciliation verdict so the reason a process refused to
     # trade is still answerable after it exits.
     try:
