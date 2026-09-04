@@ -37,8 +37,10 @@ after the fact. The baselines use textbook parameters fixed in
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any, Callable, Optional
 
 import numpy as np
@@ -118,6 +120,32 @@ class Criterion:
 
 
 @dataclass
+class Provenance:
+    """
+    Which data, universe and strategy a verdict was computed on.
+
+    An old validation result must never authorise a NEW configuration. These
+    fingerprints are what makes that checkable: the eligibility gate recomputes
+    them from what is on disk NOW and refuses a study whose inputs no longer
+    match. Without them a verdict is just a word in a file with no idea what it
+    was about.
+    """
+
+    dataset_fingerprint: str
+    universe_fingerprint: str
+    universe_definition: str
+    experiment_id: str
+    strategy_version: str
+    validation_start: str
+    validation_end: str
+    n_symbols_pool: int
+    code_version: str = "research-v2-point-in-time"
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
 class StudyResult:
     verdict: str
     criteria: list[Criterion] = field(default_factory=list)
@@ -127,6 +155,7 @@ class StudyResult:
     robustness: dict[str, Any] = field(default_factory=dict)
     limitations: list[str] = field(default_factory=list)
     n_trials: int = 0
+    provenance: Optional[Provenance] = None
 
     @property
     def validated(self) -> bool:
@@ -164,6 +193,7 @@ def walk_forward_selection(
     embargo_days: int = 10,
     cost_bps: float = DEFAULT_COST_BPS,
     min_train_days: int = 504,
+    universe: Optional[Any] = None,
 ) -> tuple[list[FoldOutcome], pd.Series]:
     """
     Select on train, measure on test, walk forward. Return the stitched OOS series.
@@ -200,7 +230,7 @@ def walk_forward_selection(
         for name, sig in signals.items():
             tr = run_backtest(
                 sig.iloc[train_slice], prices.iloc[train_slice],
-                benchmark=benchmark, cost_bps=cost_bps,
+                benchmark=benchmark, cost_bps=cost_bps, universe=universe,
             )
             s = _sharpe(tr.returns_net)
             if s > best_sharpe:
@@ -216,7 +246,7 @@ def walk_forward_selection(
         # -- measure on TEST, which selection never saw ------------------- #
         te = run_backtest(
             signals[best_name].iloc[test_slice], prices.iloc[test_slice],
-            benchmark=benchmark, cost_bps=cost_bps,
+            benchmark=benchmark, cost_bps=cost_bps, universe=universe,
         )
         te_r = te.returns_net
         oos_chunks.append(te_r)
@@ -246,11 +276,14 @@ def walk_forward_selection(
 def cost_sensitivity(
     signal: pd.DataFrame, prices: pd.DataFrame, benchmark: Optional[pd.Series],
     levels: tuple[float, ...] = (0.0, 10.0, 25.0, 50.0, 100.0),
+    universe: Optional[Any] = None,
 ) -> dict[str, dict]:
     """Sharpe and CAGR at several cost assumptions, including zero."""
     out = {}
     for bps in levels:
-        m = run_backtest(signal, prices, benchmark=benchmark, cost_bps=bps).metrics
+        m = run_backtest(
+            signal, prices, benchmark=benchmark, cost_bps=bps, universe=universe
+        ).metrics
         out[f"{bps:g}bps"] = {
             "sharpe": round(m.sharpe, 4), "cagr": round(m.cagr, 4),
             "excess_cagr": round(m.excess_cagr, 4) if m.excess_cagr is not None else None,
@@ -366,6 +399,7 @@ def concentration_analysis(result: BacktestResult) -> dict:
 def parameter_perturbation(
     signal_fn: Callable[..., pd.DataFrame], prices: pd.DataFrame,
     benchmark: Optional[pd.Series], *, variants: dict[str, dict],
+    universe: Optional[Any] = None,
 ) -> dict:
     """
     Re-measure under neighbouring configurations.
@@ -382,7 +416,8 @@ def parameter_perturbation(
     for label, kwargs in variants.items():
         try:
             m = run_backtest(
-                signal_fn(prices), prices, benchmark=benchmark, **kwargs
+                signal_fn(prices), prices, benchmark=benchmark,
+                universe=universe, **kwargs
             ).metrics
             out[label] = {"sharpe": round(m.sharpe, 4), "cagr": round(m.cagr, 4)}
         except Exception as exc:  # noqa: BLE001
@@ -403,8 +438,17 @@ def run_study(
     n_folds: int = 6,
     limitations: Optional[list[str]] = None,
     volume: Optional[pd.DataFrame] = None,
+    universe: Optional[Any] = None,
+    dataset_fingerprint: str = "unknown",
 ) -> StudyResult:
-    """Run the full evaluation and return a verdict with its evidence."""
+    """
+    Run the full evaluation and return a verdict with its evidence.
+
+    ``universe`` is the point-in-time membership provider. When supplied it is
+    applied to EVERY backtest in the study — in-sample, every walk-forward fold,
+    and every robustness variant — so no path can quietly measure the
+    survivor-only universe.
+    """
     signals = {name: fn(prices) for name, fn in BASELINE_SIGNALS.items()}
     n_trials = len(signals)
 
@@ -413,7 +457,8 @@ def run_study(
     is_results: dict[str, BacktestResult] = {}
     for name, sig in signals.items():
         res = run_backtest(
-            sig, prices, benchmark=benchmark, cost_bps=cost_bps, volume=volume
+            sig, prices, benchmark=benchmark, cost_bps=cost_bps, volume=volume,
+            universe=universe,
         )
         is_results[name] = res
         m = res.metrics
@@ -429,7 +474,8 @@ def run_study(
 
     # ---- walk-forward ----------------------------------------------------- #
     folds, oos = walk_forward_selection(
-        signals, prices, benchmark=benchmark, n_folds=n_folds, cost_bps=cost_bps
+        signals, prices, benchmark=benchmark, n_folds=n_folds,
+        cost_bps=cost_bps, universe=universe,
     )
 
     oos_sharpe = _sharpe(oos)
@@ -475,9 +521,11 @@ def run_study(
 
     robustness: dict[str, Any] = {
         "most_selected_signal": picked,
-        "cost_sensitivity": cost_sensitivity(signals[picked], prices, benchmark),
+        "cost_sensitivity": cost_sensitivity(
+            signals[picked], prices, benchmark, universe=universe
+        ),
         "parameter_perturbation": parameter_perturbation(
-            picked_fn, prices, benchmark,
+            picked_fn, prices, benchmark, universe=universe,
             variants={
                 "rebalance_1d": {"rebalance_days": 1},
                 "rebalance_5d": {"rebalance_days": 5},
@@ -500,7 +548,7 @@ def run_study(
         combined = combined.loc[:, ~combined.columns.duplicated()]
         stressed = run_backtest(
             picked_fn(combined), combined, benchmark=benchmark, cost_bps=cost_bps
-        ).metrics
+        ).metrics  # no universe: this variant deliberately widens the pool
         base = is_results[picked].metrics
         robustness["universe_sensitivity"] = {  # type: ignore[assignment]
             "method": (
@@ -521,7 +569,8 @@ def run_study(
 
     # ---- criteria --------------------------------------------------------- #
     stress = run_backtest(
-        signals[picked], prices, benchmark=benchmark, cost_bps=STRESS_COST_BPS
+        signals[picked], prices, benchmark=benchmark,
+        cost_bps=STRESS_COST_BPS, universe=universe,
     ).metrics
     pos_excess_frac = (
         sub.get("positive_excess_years", 0) / sub["total_excess_years"]
@@ -569,18 +618,53 @@ def run_study(
     ]
 
     lims = list(limitations or [])
-    # A data-integrity gate. Even a clean statistical pass cannot certify a
-    # strategy measured on a universe that excludes every company that failed.
-    survivorship_blocking = any("SURVIVORSHIP" in x.upper() for x in lims)
+    # The data-integrity gate, keyed on whether a point-in-time provider was
+    # ACTUALLY applied rather than on a hand-written limitation string. A
+    # sentence can be edited; a provider either ran or it did not.
     criteria.append(Criterion(
-        "point_in_time_universe", not survivorship_blocking,
-        "present-day snapshot" if survivorship_blocking else "point-in-time",
+        "point_in_time_universe", universe is not None,
+        "point-in-time provider applied" if universe is not None
+        else "present-day snapshot",
         "point-in-time",
         "A universe that excludes delisted companies cannot support a "
         "validation claim, however strong the statistics computed on it.",
     ))
 
     verdict = "VALIDATED" if all(c.passed for c in criteria) else "NOT VALIDATED"
+
+    # The experiment id binds the verdict to everything that produced it. Any
+    # change to the data, the universe, the cost assumption, the fold count or
+    # the criteria yields a different id — so a stored verdict can never be
+    # matched against a configuration it was not computed for.
+    universe_fp = universe.fingerprint() if universe is not None else "none"
+    universe_def = (
+        universe.manifest()["definition"] if universe is not None
+        else "SURVIVOR-ONLY: no point-in-time universe was applied"
+    )
+    experiment_id = hashlib.sha256(json.dumps({
+        "dataset": dataset_fingerprint,
+        "universe": universe_fp,
+        "signals": sorted(signals),
+        "cost_bps": cost_bps,
+        "n_folds": n_folds,
+        "criteria": {
+            "min_oos_sharpe": MIN_OOS_SHARPE, "min_dsr": MIN_DSR,
+            "max_pbo": MAX_PBO, "min_excess": MIN_EXCESS_CAGR,
+            "stress_cost_bps": STRESS_COST_BPS,
+            "min_positive_years": MIN_POSITIVE_YEAR_FRACTION,
+        },
+    }, sort_keys=True).encode()).hexdigest()[:16]
+
+    provenance = Provenance(
+        dataset_fingerprint=dataset_fingerprint,
+        universe_fingerprint=universe_fp,
+        universe_definition=universe_def,
+        experiment_id=experiment_id,
+        strategy_version=f"baselines:{','.join(sorted(signals))}",
+        validation_start=str(oos.index[0].date()) if len(oos) else "n/a",
+        validation_end=str(oos.index[-1].date()) if len(oos) else "n/a",
+        n_symbols_pool=int(prices.shape[1]),
+    )
 
     return StudyResult(
         verdict=verdict,
@@ -602,4 +686,5 @@ def run_study(
             f"UNTESTABLE: {k} — {v}" for k, v in UNTESTABLE_SIGNALS.items()
         ],
         n_trials=n_trials,
+        provenance=provenance,
     )

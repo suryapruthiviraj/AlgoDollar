@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import asdict, dataclass, field
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
 import pandas as pd
@@ -193,6 +193,49 @@ def build_forward_returns(
 # --------------------------------------------------------------------------- #
 #  Weights                                                                      #
 # --------------------------------------------------------------------------- #
+
+def apply_point_in_time_universe(
+    signal: pd.DataFrame, universe: Any, *, strict: bool = True
+) -> pd.DataFrame:
+    """
+    Blank the signal wherever a name was NOT eligible on that date.
+
+    Applied to the SIGNAL rather than filtered out of the price panel, so the
+    date index is untouched and a name entering or leaving mid-study simply
+    starts or stops being rankable. Filtering rows would silently shorten the
+    study for every other symbol.
+
+    ``strict`` decides what happens on a date the provider cannot answer for.
+    True — the default — blanks the whole row, so an unanswerable date holds no
+    positions. The alternative, carrying the previous membership forward, is
+    exactly the leak this module exists to prevent.
+    """
+    from app.research.universe import UniverseUnavailable
+
+    out = pd.DataFrame(
+        np.nan, index=signal.index, columns=signal.columns, dtype=float
+    )
+    unavailable = 0
+    for ts in signal.index:
+        try:
+            members = universe.get_members(ts)
+        except UniverseUnavailable:
+            unavailable += 1
+            if strict:
+                continue          # row stays NaN: no eligible names, no positions
+            raise
+        cols = [c for c in members if c in signal.columns]
+        if cols:
+            out.loc[ts, cols] = signal.loc[ts, cols]
+
+    if unavailable:
+        logger.info(
+            "point-in-time universe: %d of %d dates were UNAVAILABLE (liquidity "
+            "warm-up or outside the data) and hold no positions.",
+            unavailable, len(signal.index),
+        )
+    return out
+
 
 def cross_sectional_weights(
     signal: pd.DataFrame,
@@ -379,6 +422,7 @@ def run_backtest(
     lag: int = 2,
     volume: Optional[pd.DataFrame] = None,
     max_participation: float = 0.05,
+    universe: Optional[Any] = None,
 ) -> BacktestResult:
     """
     Measure one configuration. Nothing here is fitted or selected.
@@ -397,6 +441,12 @@ def run_backtest(
 
     if signal.empty:
         raise ValueError("no overlap between signal and price panels")
+
+    # Point-in-time membership is applied BEFORE ranking, so a name that was
+    # not eligible on a date cannot influence the cross-sectional percentile
+    # that decides what is held on it.
+    if universe is not None:
+        signal = apply_point_in_time_universe(signal, universe)
 
     fwd = build_forward_returns(prices, horizon=1, lag=lag)
     assert_no_lookahead(signal, fwd, lag=lag)
@@ -470,6 +520,10 @@ def run_backtest(
             "lag": lag, "cost_bps": cost_bps,
             "liquidity_capped": volume is not None,
             "max_participation": max_participation if volume is not None else None,
+            "point_in_time_universe": universe is not None,
+            "universe_fingerprint": (
+                universe.fingerprint() if universe is not None else None
+            ),
         },
         warnings=warnings,
     )

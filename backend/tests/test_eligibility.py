@@ -1286,7 +1286,19 @@ def test_repo_statistical_evidence_comes_from_the_study_file():
 
     study = json.loads(path.read_text())
     oos = study.get("out_of_sample") or {}
+    prov = study.get("provenance") or {}
     evidence = gather_repo_evidence()
+
+    if not prov.get("experiment_id") or \
+            str(prov.get("universe_fingerprint") or "none") == "none":
+        # A study with no provenance, or one run without a point-in-time
+        # universe, must authorise NOTHING. Its numbers describe a
+        # survivor-only universe and cannot be tied to any configuration.
+        assert evidence.oos_sharpe is None
+        assert evidence.deflated_sharpe_ratio is None
+        assert any("REJECTED" in n for n in evidence.notes)
+        return
+
     assert evidence.oos_sharpe == oos.get("sharpe")
     assert evidence.deflated_sharpe_ratio == oos.get("deflated_sharpe_ratio")
     assert evidence.n_trials_recorded == oos.get("n_trials")
@@ -1301,9 +1313,20 @@ def test_a_non_validated_study_is_recorded_as_blocking():
     path = DEFAULT_ROOT / "study_result.json"
     if not path.exists():
         return
-    verdict = json.loads(path.read_text()).get("verdict")
+    study = json.loads(path.read_text())
+    verdict = study.get("verdict")
+    prov = study.get("provenance") or {}
     notes = " ".join(gather_repo_evidence().notes)
+
+    if not prov.get("experiment_id") or \
+            str(prov.get("universe_fingerprint") or "none") == "none":
+        assert "REJECTED" in notes, (
+            "a study that cannot be tied to a configuration was accepted"
+        )
+        return
+
     assert f"Research study verdict: {verdict}" in notes
+    assert "Research provenance:" in notes
     if verdict != "VALIDATED":
         assert "NO VALIDATED STRATEGY" in notes
 

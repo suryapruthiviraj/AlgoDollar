@@ -2,133 +2,197 @@
 
 # STATUS: **NOT VALIDATED**
 
-**No strategy in this repository is approved for live trading.** The execution
-system refuses to promote one: `gather_repo_evidence()` reads the study's own
-output file, and a verdict other than `VALIDATED` is recorded as a blocking
-note in the eligibility report.
+**Survivorship bias has been removed.** The point-in-time universe criterion now PASSES.
+The strategy fails on a different criterion — consistency across years — and that failure is
+reported rather than argued away.
 
-Seven of eight acceptance criteria pass. The eighth — a point-in-time universe —
-fails, and it is not a technicality. It is the criterion that decides whether
-the other seven measured anything real.
-
-Everything below is computed by `backend/scripts/run_research.py` from
-`backend/research_data/`. Regenerate with:
+Regenerate:
 
 ```bash
-python scripts/acquire_data.py --symbols 120 --start 2012-01-01
+cd backend
+python scripts/acquire_universe_reference.py   # NSE listing dates + symbol changes
+python scripts/acquire_pool.py                 # full pre-2012 listing pool
 python scripts/audit_data.py
-python scripts/probe_survivorship.py
 python scripts/run_research.py
 ```
 
 ---
 
-## 1. The dataset
+## 1. Universe definition (chosen, not assumed)
 
-Real NSE daily OHLCV from Yahoo Finance, acquired 2026-09-04.
+    Universe(D) = { s : listed_on_or_before(s, D)
+                      AND still_trading_on(s, D)
+                      AND trailing-60-session avg volume >= 500,000 shares
+                      AND trailing-60-session avg turnover >= Rs 5,000,000
+                      AND price(s, D) >= Rs 5 }
+
+A **liquidity-screened NSE equity universe** — deliberately NOT index membership.
+
+The original design was `StockUniverse.get_nifty500_symbols()` (a hardcoded snapshot of
+today's NIFTY 500) plus `filter_liquid(min_avg_volume=500_000, min_avg_turnover=5_000_000,
+lookback_days=60)`. The liquidity filter was already point-in-time; the membership list was
+not. **The thresholds are carried over unchanged** — re-deriving them against the new
+universe would be fitting the universe to the result.
+
+Index membership was not used because it **cannot be established**: NSE serves no dated
+historical constituent files (verified, 404), and no reachable source provides entry/exit
+dates. Inferring it would fabricate the dates that decide every result.
+
+| Element | Source |
+|---|---|
+| Membership date | Every trading session, computed on demand |
+| Entry date | max(NSE published `DATE OF LISTING`, first observed bar) |
+| Exit date | Last observed bar, when the series stops ≥20 sessions before the data ends |
+| Symbol / exchange | NSE `EQUITY_L.csv`, EQ series only |
+| Corporate actions | `adj_close` for returns; raw `close` for fills; ex-dates unavailable |
+| Listing/delisting | Entry from listing date; exit from series end (reason not recoverable) |
+
+## 2. Historical membership coverage
 
 | | |
 |---|---|
-| Symbols (research universe) | **108** |
-| Observations | **362,697** |
-| Trading sessions | **3,623** |
-| Date range | **2012-01-02 → 2026-09-03** (14.7 years) |
-| Benchmark | `^NSEI` (NIFTY 50), 3,603 sessions |
-| Stress universe (sensitivity only) | 12 known corporate failures |
+| Pool | **946 symbols** (827 newly fetched this phase) |
+| Observations | **3,368,792** |
+| Sessions | 3,626 · 2012-01-02 → 2026-09-03 |
+| Membership UNAVAILABLE before | **2012-02-28** (60-session liquidity warm-up — raises, never guesses) |
+| Universe fingerprint | `ae8711d55c7e23f2` |
 
-### Integrity — what the audit found
+Membership size by year — **not a snapshot**:
 
-| Check | Result |
-|---|---|
-| Duplicate index rows | **0** |
-| Non-monotonic date indexes | **0** |
-| Non-positive prices | **0** |
-| OHLC relationship violations (high < low, etc.) | **0** |
-| Symbols missing `adj_close` | **0** |
-| Symbols with intra-life coverage gaps | 7 |
-| Benchmark sessions missing vs. universe | 20 |
-| **Stale carried-forward bars** | **757 across all 108 symbols** |
+| 2012 | 2014 | 2016 | 2018 | 2020 | 2022 | 2024 | 2026 |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 169 | 222 | 209 | 258 | 243 | 338 | 365 | 373 |
 
-Nothing was repaired. The audit reports; it does not forward-fill, de-duplicate
-or smooth.
+## 3. Data source / provenance
 
-### Two findings that change how the data must be used
-
-**Stale bars.** 757 rows have `volume == 0` and `open == high == low == close` —
-the vendor carrying the previous close forward on a non-trading day. They are
-not neutral: each produces a return of **exactly zero**, which compresses
-measured volatility and inflates any Sharpe computed from the series. Masking
-them removed 136 fake zero-returns from a 20-symbol sample (314 → 178). They are
-NaN'd by `ParquetDailyBars.panel(drop_stale=True)`, never filled.
-
-**`close` is already split-adjusted.** The `close/adj_close` ratio starts above
-1.0 and converges to exactly 1.0 at the end of every series, and no symbol shows
-a ~50% single-day move in `close` where a split is known to have occurred. Only
-dividends separate the two series. Consequence: **neither series is the price
-actually quoted on a past date.** Returns are correct; a backtest sizing
-positions in *shares* off `close` computes a share count that never existed.
-Rupee-notional sizing is unaffected, which is what this backtester uses.
-
-### Point-in-time vs reconstructed
-
-| Field | Status |
-|---|---|
-| Daily OHLCV bars | **POINT-IN-TIME** — as traded on the date recorded |
-| `adj_close` | **RECONSTRUCTED** — back-adjusted with actions known *today* |
-| Universe membership | **RECONSTRUCTED** — present-day snapshot |
-| Sector labels | **RECONSTRUCTED** — current classification applied to all dates |
-| Benchmark level | **POINT-IN-TIME** |
-
-### Datasets that do not exist here
-
-Wired as raising `UnavailableProvider`s rather than left as `None`, so a study
-needing one fails loudly instead of running on a substitute:
-
-- **Intraday bars** — daily only. No intraday strategy can be researched.
-- **Point-in-time index membership** — see §2.
-- **Corporate actions** — no ex-dates, ratios or dividend amounts. Only implicit
-  in `adj_close`.
-- **Point-in-time fundamentals** — no publication dates. **Value and quality
-  factors are therefore untestable here**, and are reported as untested rather
-  than approximated.
-- **Delistings / symbol changes** — no mapping table. 12 of 120 requested
-  symbols returned nothing (`HDFC`, `LTIM`, `MCDOWELL-N`, `ADANITRANS`, `PVR`,
-  `ZOMATO`…), most of them renamed or merged tickers. That is direct evidence of
-  the gap, not a transient fetch error.
-
----
-
-## 2. Survivorship bias — measured, not just declared
-
-The universe is a **present-day** NIFTY 500 snapshot, so every name in it
-survived to today. Rather than state that and move on,
-`scripts/probe_survivorship.py` tried to fetch 16 well-known Indian corporate
-failures.
-
-**13 of 16 were reachable, with full 3,600-row history.**
-
-| Symbol | Total return 2012→2026 | Max drawdown |
+| Source | Content | Status |
 |---|---|---|
-| RCOM | **−98.9%** | −99.7% |
-| GTLINFRA | −87.2% | −98.6% |
-| RELINFRA | −81.1% | −98.8% |
-| UNITECH | −80.7% | −99.1% |
-| JETAIRWAYS | −80.2% | −98.4% |
-| IDEA | −70.6% | −97.6% |
-| RPOWER | −67.9% | −99.2% |
-| YESBANK | −47.0% | −97.2% |
+| `nsearchives.nseindia.com/.../EQUITY_L.csv` | 2,288 EQ symbols + `DATE OF LISTING` | **used** |
+| `.../symbolchange.csv` | 1,057 ticker changes | acquired |
+| `.../ind_nifty500list.csv` | Today's NIFTY 500 | provenance only — **never applied historically** |
+| Yahoo Finance (`yfinance`) | Daily OHLCV + `adj_close` | **used** |
+| `DelistedCompanies.csv`, `SUSPENSION.csv` | delisting register | **404 — unavailable** |
+| dated index constituents | historical membership | **404 — unavailable** |
 
-Controls (RELIANCE, TCS, INFY) all returned 3,623 rows, so the probe itself
-works.
+### Phase 3 — corporate-failure validation
 
-**This is the important conclusion: the survivorship gap here is mostly a
-UNIVERSE CONSTRUCTION problem, not a data availability one.** These names are
-absent from the study because the membership list is a snapshot, not because the
-vendor cannot serve them. That is fixable — and until it is fixed, the verdict
-stays NOT VALIDATED.
+| Symbol | In pool | Member 2013–2017 | Member 2019+ | Correct? |
+|---|---|---|---|---|
+| RCOM | yes | **yes** | no | collapsed 2019 |
+| UNITECH | yes | **yes** | no | suspended |
+| JETAIRWAYS | yes | **yes** (to 2019) | no | ceased ops 2019 |
+| RELINFRA | yes | **yes** | yes → out by 2026 | still traded |
+| GTLINFRA | yes | **never** | never | **correctly excluded** — penny stock, never met the floor |
 
-`DHFL`, `ALOKTEXT` and `JPASSOCIAT` were genuinely unreachable and remain
-permanently absent.
+GTLINFRA is the important row: it was **not forced in** to improve the survivorship story. It
+was never eligible, so it never appears.
+
+## 4. Old (survivorship-biased) vs 5. New (point-in-time)
+
+| Metric | OLD — 108-symbol snapshot | NEW — 946-symbol point-in-time |
+|---|---:|---:|
+| OOS Sharpe | 1.2559 | **1.0111** |
+| CAGR | 16.84% | 19.17% |
+| Benchmark CAGR | 12.03% | 11.88% |
+| Excess CAGR | +4.81% | **+7.30%** |
+| **DSR** (6 trials) | 0.9982 | **0.9831** |
+| **PBO** | 0.0143 | **0.0000** |
+| **Bootstrap 90% CI** | [0.68, 1.89] | **[0.4656, 1.5782]**, P(>0)=0.999 |
+| Positive excess years | 76.9% | **53.85%** |
+| Most-selected signal | low_volatility | vol_scaled_momentum |
+| Sortino / MDD / Calmar | — | see below |
+| Max drawdown | −44.0% | **−39.7%** |
+| Beta | — | **0.947** |
+| Annual turnover | — | **15.96x** |
+| Cost drag | — | **3.98%/yr** |
+| Distinct names held | — | 559 (mean 53.5 positions/day) |
+
+**Sharpe fell and the confidence interval widened.** The bootstrap lower bound dropped from
+0.68 to 0.47 — the result is materially less certain once the universe is honest.
+
+### Regime — the finding the biased universe hid
+
+| Regime | Days | Sharpe |
+|---|---:|---:|
+| Bull | 1,065 | +2.09 |
+| Sideways | 1,844 | +1.14 |
+| **Bear** | **170** | **−2.15** |
+
+The strategy **loses badly in downturns**. A survivor-only universe cannot show this,
+because the names that fell hardest were removed from it.
+
+### Cost sensitivity
+
+| 0bps | 10bps | 25bps | 50bps | 100bps |
+|---:|---:|---:|---:|---:|
+| 1.33 | 1.26 | **1.17** | 1.01 | 0.70 |
+
+### Concentration
+
+Top 10 days contribute 66.6% of total return; excluding them, Sharpe falls 1.17 → **0.83**.
+
+### Parameter perturbation (stability, not search)
+
+Rebalance 1/5/10/21d → Sharpe 0.94 / 1.17 / 1.16 / 1.14. Quantile decile/quintile/third →
+1.20 / 1.17 / 1.07. Stable except at daily rebalancing, where cost dominates.
+
+## 6–8. Criteria and verdict
+
+| Criterion | Observed | Threshold | |
+|---|---:|---:|---|
+| OOS Sharpe | 1.0111 | ≥ 0.50 | PASS |
+| Bootstrap 5th pct | 0.4656 | > 0 | PASS |
+| Deflated Sharpe | 0.9831 | ≥ 0.95 | PASS |
+| PBO | 0.0000 | ≤ 0.50 | PASS |
+| Excess CAGR | +7.30% | > 0 | PASS |
+| Survives 50bps | 1.0115 | ≥ 0.50 | PASS |
+| **Positive excess years** | **53.85%** | **≥ 55%** | **FAIL** |
+| **Point-in-time universe** | **applied** | point-in-time | **PASS** |
+
+Excess by year: 2014 −8.4%, 2015 +7.3%, 2016 −3.3%, 2017 +14.1%, 2018 −10.9%, 2019 −9.6%,
+2020 +14.4%, 2021 +59.7%, 2023 +50.7%, 2025 −17.4%. **Six of thirteen years negative**, and
+the total leans heavily on 2021 and 2023.
+
+# VERDICT: NOT VALIDATED
+
+7 of 8 pass; the consistency criterion fails at 53.85% against a 55% threshold **fixed before
+the study ran**. It was not moved. Under the previous biased universe the same criterion read
+76.9% — the difference is what survivorship bias was concealing.
+
+## Provenance (Phase 7)
+
+```
+experiment_id : 83262ea24beff98f
+dataset       : 8bd6046a2735cfae
+universe      : ae8711d55c7e23f2
+strategy      : baselines:breakout_126d,low_volatility,momentum_12_1,
+                short_term_reversal,trend_50_200,vol_scaled_momentum
+period        : 2014-01-29 -> 2026-09-03
+```
+
+`gather_repo_evidence()` **rejects** any study lacking a provenance block or run without a
+point-in-time universe: statistical evidence stays `None`, so every statistical gate fails.
+The old biased result can no longer satisfy any gate.
+
+## 9–12. Status
+
+| | |
+|---|---|
+| **Strategy** | **NOT VALIDATED** |
+| **Paper trading** | Already enabled and working; no change |
+| **Live trading** | **BLOCKED** — unchanged |
+| Promotion | Stays at *Research NOT VALIDATED → strategy disabled → no forced trades* |
+
+### Remaining blockers
+
+1. **Consistency** — 6 of 13 years negative; returns concentrated in 2021 and 2023.
+2. **Bear-regime Sharpe −2.15** — no downside protection.
+3. **Residual pool bias** — NSE's equity list contains only companies listed *today*, so
+   companies delisted before it was published are absent. Only 1 of 946 pool symbols shows a
+   series ending, which is implausibly low and confirms the pool still under-represents
+   failures. The universe *definition* is point-in-time; the *pool* is not yet complete.
+4. **No point-in-time fundamentals** — value and quality remain untestable.
+5. **No intraday feed** — the intraday sleeve remains unvalidatable.
 
 ---
 

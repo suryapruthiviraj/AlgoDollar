@@ -144,6 +144,16 @@ MAX_ACTIVE_RISK_LIMIT_BREACHES = 0        # any live breach blocks
 MAX_OPEN_RECONCILIATION_BREAKS = 0        # any unexplained position break blocks
 
 
+class _StaleStudy(RuntimeError):
+    """
+    The stored research result cannot authorise the current configuration.
+
+    Raised internally so every statistical field is left unset in one place
+    rather than being cleared at each assignment, which would be easy to get
+    partially wrong.
+    """
+
+
 def _num_or_none(v: Any) -> Optional[float]:
     """
     Coerce a JSON value to a finite float, or None.
@@ -1832,6 +1842,43 @@ def gather_repo_evidence() -> Evidence:
         if study_path.exists():
             study = json.loads(study_path.read_text())
             study_verdict = str(study.get("verdict") or "")
+
+            # PROVENANCE IS MANDATORY.
+            #
+            # A verdict with no record of WHICH data, universe and strategy
+            # produced it cannot be matched against the current configuration,
+            # so it could authorise anything. A study predating the
+            # point-in-time universe work has no provenance block at all — and
+            # was computed on a survivor-only universe — so it is rejected
+            # outright rather than being allowed to satisfy a gate.
+            prov = study.get("provenance") or {}
+            if not prov.get("experiment_id"):
+                notes.append(
+                    "RESEARCH RESULT REJECTED: study_result.json carries no "
+                    "provenance block, so the data, universe and strategy it "
+                    "was computed on are unknown. It predates point-in-time "
+                    "universe support and was measured on a survivor-only "
+                    "universe. Re-run scripts/run_research.py."
+                )
+                raise _StaleStudy()
+
+            if str(prov.get("universe_fingerprint") or "none") == "none":
+                notes.append(
+                    "RESEARCH RESULT REJECTED: the study was run WITHOUT a "
+                    "point-in-time universe provider, so its numbers describe a "
+                    "survivor-only universe. Re-run scripts/run_research.py."
+                )
+                raise _StaleStudy()
+
+            notes.append(
+                "Research provenance: experiment={} dataset={} universe={} "
+                "strategy={} period={}..{}".format(
+                    prov.get("experiment_id"), prov.get("dataset_fingerprint"),
+                    prov.get("universe_fingerprint"), prov.get("strategy_version"),
+                    prov.get("validation_start"), prov.get("validation_end"),
+                )
+            )
+
             oos = study.get("out_of_sample") or {}
             oos_sharpe_val = _num_or_none(oos.get("sharpe"))
             dsr_val = _num_or_none(oos.get("deflated_sharpe_ratio"))
@@ -1859,6 +1906,15 @@ def gather_repo_evidence() -> Evidence:
                 f"No research study result at {study_path}: no strategy has been "
                 f"validated. Run scripts/run_research.py."
             )
+    except _StaleStudy:
+        # Every statistical field stays None, so every statistical gate FAILS.
+        # That is the correct verdict for a result that cannot be tied to the
+        # configuration it is being asked to authorise.
+        study_verdict = None
+        oos_sharpe_val = oos_sharpe_stressed = dsr_val = None
+        pbo_val = excess_val = None
+        trials = None
+        wf_done = None
     except Exception as exc:  # noqa: BLE001
         notes.append(f"Research study result could not be read: {exc!r}.")
 

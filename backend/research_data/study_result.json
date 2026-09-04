@@ -1,8 +1,51 @@
 {
-  "generated_utc": "2026-09-04T14:00:12.382130+00:00",
+  "generated_utc": "2026-09-04T16:37:43.664555+00:00",
   "verdict": "NOT VALIDATED",
-  "universe_size": 107,
-  "sessions": 3623,
+  "provenance": {
+    "dataset_fingerprint": "8bd6046a2735cfae",
+    "universe_fingerprint": "ae8711d55c7e23f2",
+    "universe_definition": "Liquidity-screened NSE equity universe. Membership on date D requires: listed on or before D (NSE DATE OF LISTING and first observed bar), still trading on D (series has not ended), trailing 60-session average volume >= 500,000 shares AND average turnover >= Rs 5,000,000, and price >= Rs 5.0.",
+    "experiment_id": "83262ea24beff98f",
+    "strategy_version": "baselines:breakout_126d,low_volatility,momentum_12_1,short_term_reversal,trend_50_200,vol_scaled_momentum",
+    "validation_start": "2014-01-29",
+    "validation_end": "2026-09-03",
+    "n_symbols_pool": 946,
+    "code_version": "research-v2-point-in-time"
+  },
+  "universe_manifest": {
+    "definition": "Liquidity-screened NSE equity universe. Membership on date D requires: listed on or before D (NSE DATE OF LISTING and first observed bar), still trading on D (series has not ended), trailing 60-session average volume >= 500,000 shares AND average turnover >= Rs 5,000,000, and price >= Rs 5.0.",
+    "not_index_membership": "Deliberately NOT the NIFTY 500. NSE serves no dated historical constituent files, so index membership cannot be established point-in-time and is not inferred.",
+    "fingerprint": "ae8711d55c7e23f2",
+    "pool_size": 946,
+    "date_range": [
+      "2012-01-02",
+      "2026-09-03"
+    ],
+    "unavailable_before": "2012-02-28",
+    "thresholds": {
+      "min_avg_volume": 500000.0,
+      "min_avg_turnover": 5000000.0,
+      "liquidity_window": 60,
+      "min_price": 5.0,
+      "min_observations": 40
+    },
+    "pool_completeness": {
+      "pool_size": 946,
+      "stopped_trading": 1,
+      "stopped_trading_pct": 0.11,
+      "examples": [
+        "JETAIRWAYS"
+      ],
+      "limitation": "Counts only names present in the pool. Companies that delisted before NSE's current equity list was published are absent from it entirely and cannot be counted here."
+    },
+    "notes": [
+      "1 symbols stopped trading during the period and are excluded from dates after they stopped.",
+      "Membership is UNAVAILABLE for the liquidity warm-up period.",
+      "The POOL is incomplete: NSE's equity list contains only companies listed today, so companies that delisted before today are absent unless added by name."
+    ]
+  },
+  "universe_size": 946,
+  "sessions": 3626,
   "date_range": [
     "2012-01-02",
     "2026-09-03"
@@ -11,119 +54,119 @@
     {
       "name": "oos_sharpe",
       "passed": true,
-      "observed": 1.2559,
+      "observed": 1.0111,
       "threshold": 0.5,
       "detail": "Walk-forward out-of-sample Sharpe, net of costs."
     },
     {
       "name": "bootstrap_lower_bound",
       "passed": true,
-      "observed": 0.6836,
+      "observed": 0.4656,
       "threshold": 0.0,
       "detail": "5th percentile of the stationary-bootstrap Sharpe distribution."
     },
     {
       "name": "deflated_sharpe",
       "passed": true,
-      "observed": 0.9982,
+      "observed": 0.9831,
       "threshold": 0.95,
       "detail": "P(true Sharpe > 0) after deflating for 6 trials."
     },
     {
       "name": "pbo",
       "passed": true,
-      "observed": 0.0143,
+      "observed": 0.0,
       "threshold": 0.5,
       "detail": "Probability the in-sample winner underperforms out-of-sample."
     },
     {
       "name": "excess_cagr_vs_benchmark",
       "passed": true,
-      "observed": 0.0481,
+      "observed": 0.073,
       "threshold": 0.0,
       "detail": "Out-of-sample CAGR minus benchmark CAGR over the same dates."
     },
     {
       "name": "survives_double_costs",
       "passed": true,
-      "observed": 1.1119,
+      "observed": 1.0115,
       "threshold": 0.5,
       "detail": "In-sample Sharpe at 50bps/side."
     },
     {
       "name": "consistent_across_years",
-      "passed": true,
-      "observed": 0.7692,
+      "passed": false,
+      "observed": 0.5385,
       "threshold": 0.55,
       "detail": "Fraction of out-of-sample years with positive excess return."
     },
     {
       "name": "point_in_time_universe",
-      "passed": false,
-      "observed": "present-day snapshot",
+      "passed": true,
+      "observed": "point-in-time provider applied",
       "threshold": "point-in-time",
       "detail": "A universe that excludes delisted companies cannot support a validation claim, however strong the statistics computed on it."
     }
   ],
   "in_sample": {
     "momentum_12_1": {
-      "sharpe": 0.5987,
-      "cagr": 0.1105,
-      "max_drawdown": -0.4345,
-      "excess_cagr": -0.012,
-      "beta": 1.0016,
-      "turnover_annual": 20.88,
-      "cost_drag_annual": 0.0522,
+      "sharpe": 0.8174,
+      "cagr": 0.1775,
+      "max_drawdown": -0.4914,
+      "excess_cagr": 0.055,
+      "beta": 1.0367,
+      "turnover_annual": 16.24,
+      "cost_drag_annual": 0.0405,
       "NOTE": "IN-SAMPLE, full period. NOT evidence of anything."
     },
     "short_term_reversal": {
-      "sharpe": 0.3355,
-      "cagr": 0.0517,
-      "max_drawdown": -0.542,
-      "excess_cagr": -0.0708,
-      "beta": 1.1473,
-      "turnover_annual": 51.0,
-      "cost_drag_annual": 0.1275,
+      "sharpe": 0.1711,
+      "cagr": 0.0117,
+      "max_drawdown": -0.6436,
+      "excess_cagr": -0.1108,
+      "beta": 1.154,
+      "turnover_annual": 47.35,
+      "cost_drag_annual": 0.1182,
       "NOTE": "IN-SAMPLE, full period. NOT evidence of anything."
     },
     "trend_50_200": {
-      "sharpe": 0.5693,
-      "cagr": 0.0939,
-      "max_drawdown": -0.3969,
-      "excess_cagr": -0.0285,
-      "beta": 0.8198,
-      "turnover_annual": 12.31,
-      "cost_drag_annual": 0.0308,
+      "sharpe": 0.7117,
+      "cagr": 0.1368,
+      "max_drawdown": -0.4669,
+      "excess_cagr": 0.0144,
+      "beta": 0.8416,
+      "turnover_annual": 9.58,
+      "cost_drag_annual": 0.0239,
       "NOTE": "IN-SAMPLE, full period. NOT evidence of anything."
     },
     "low_volatility": {
-      "sharpe": 0.9238,
-      "cagr": 0.1274,
-      "max_drawdown": -0.3371,
-      "excess_cagr": 0.005,
-      "beta": 0.7502,
-      "turnover_annual": 21.71,
-      "cost_drag_annual": 0.0543,
+      "sharpe": 1.0293,
+      "cagr": 0.1441,
+      "max_drawdown": -0.3507,
+      "excess_cagr": 0.0217,
+      "beta": 0.7834,
+      "turnover_annual": 11.24,
+      "cost_drag_annual": 0.0281,
       "NOTE": "IN-SAMPLE, full period. NOT evidence of anything."
     },
     "breakout_126d": {
-      "sharpe": 0.0933,
-      "cagr": 0.0005,
-      "max_drawdown": -0.5118,
-      "excess_cagr": -0.122,
-      "beta": 0.8655,
-      "turnover_annual": 46.5,
-      "cost_drag_annual": 0.1164,
+      "sharpe": 0.6711,
+      "cagr": 0.1199,
+      "max_drawdown": -0.4609,
+      "excess_cagr": -0.0025,
+      "beta": 0.9305,
+      "turnover_annual": 37.53,
+      "cost_drag_annual": 0.0936,
       "NOTE": "IN-SAMPLE, full period. NOT evidence of anything."
     },
     "vol_scaled_momentum": {
-      "sharpe": 0.5345,
-      "cagr": 0.0859,
-      "max_drawdown": -0.4398,
-      "excess_cagr": -0.0365,
-      "beta": 0.9144,
-      "turnover_annual": 21.36,
-      "cost_drag_annual": 0.0535,
+      "sharpe": 0.9886,
+      "cagr": 0.1927,
+      "max_drawdown": -0.3966,
+      "excess_cagr": 0.0703,
+      "beta": 0.9469,
+      "turnover_annual": 15.96,
+      "cost_drag_annual": 0.0398,
       "NOTE": "IN-SAMPLE, full period. NOT evidence of anything."
     }
   },
@@ -131,229 +174,216 @@
     {
       "fold": 0,
       "train_start": "2012-01-02",
-      "train_end": "2014-01-15",
-      "test_start": "2014-01-30",
-      "test_end": "2016-03-14",
-      "selected_signal": "low_volatility",
-      "train_sharpe": 2.0541,
-      "test_sharpe": 2.1926,
-      "test_return": 0.7236
+      "train_end": "2014-01-10",
+      "test_start": "2014-01-27",
+      "test_end": "2016-03-10",
+      "selected_signal": "trend_50_200",
+      "train_sharpe": 1.3541,
+      "test_sharpe": 0.3766,
+      "test_return": 0.1192
     },
     {
       "fold": 1,
       "train_start": "2012-01-02",
-      "train_end": "2016-02-26",
-      "test_start": "2016-03-15",
-      "test_end": "2018-04-20",
+      "train_end": "2016-02-24",
+      "test_start": "2016-03-11",
+      "test_end": "2018-04-19",
       "selected_signal": "low_volatility",
-      "train_sharpe": 2.0166,
-      "test_sharpe": 1.9822,
-      "test_return": 0.4783
+      "train_sharpe": 1.1979,
+      "test_sharpe": 2.2364,
+      "test_return": 0.6653
     },
     {
       "fold": 2,
       "train_start": "2012-01-02",
-      "train_end": "2018-04-06",
-      "test_start": "2018-04-23",
+      "train_end": "2018-04-05",
+      "test_start": "2018-04-20",
       "test_end": "2020-06-05",
       "selected_signal": "low_volatility",
-      "train_sharpe": 2.014,
-      "test_sharpe": 0.1391,
-      "test_return": 0.0176
+      "train_sharpe": 1.5375,
+      "test_sharpe": -0.2715,
+      "test_return": -0.1342
     },
     {
       "fold": 3,
       "train_start": "2012-01-02",
       "train_end": "2020-05-21",
       "test_start": "2020-06-08",
-      "test_end": "2022-07-04",
-      "selected_signal": "low_volatility",
-      "train_sharpe": 1.2546,
-      "test_sharpe": 1.8313,
-      "test_return": 0.6583
+      "test_end": "2022-07-05",
+      "selected_signal": "vol_scaled_momentum",
+      "train_sharpe": 0.8984,
+      "test_sharpe": 1.8848,
+      "test_return": 1.2661
     },
     {
       "fold": 4,
       "train_start": "2012-01-02",
-      "train_end": "2022-06-20",
-      "test_start": "2022-07-05",
-      "test_end": "2024-08-13",
-      "selected_signal": "low_volatility",
-      "train_sharpe": 1.4099,
-      "test_sharpe": 2.227,
-      "test_return": 0.5657
+      "train_end": "2022-06-21",
+      "test_start": "2022-07-06",
+      "test_end": "2024-08-16",
+      "selected_signal": "vol_scaled_momentum",
+      "train_sharpe": 1.146,
+      "test_sharpe": 2.298,
+      "test_return": 1.5061
     },
     {
       "fold": 5,
       "train_start": "2012-01-02",
-      "train_end": "2024-07-30",
-      "test_start": "2024-08-14",
+      "train_end": "2024-08-01",
+      "test_start": "2024-08-19",
       "test_end": "2026-09-03",
-      "selected_signal": "low_volatility",
-      "train_sharpe": 1.5752,
-      "test_sharpe": 0.0537,
-      "test_return": -0.0013
+      "selected_signal": "vol_scaled_momentum",
+      "train_sharpe": 1.3847,
+      "test_sharpe": -0.0704,
+      "test_return": -0.0639
     }
   ],
   "out_of_sample": {
-    "n_observations": 3085,
-    "sharpe": 1.2559,
-    "cagr": 0.1684,
-    "benchmark_cagr": 0.1203,
-    "excess_cagr": 0.0481,
-    "deflated_sharpe_ratio": 0.9982,
-    "pbo": 0.0143,
+    "n_observations": 3088,
+    "sharpe": 1.0111,
+    "cagr": 0.1917,
+    "benchmark_cagr": 0.1188,
+    "excess_cagr": 0.073,
+    "deflated_sharpe_ratio": 0.9831,
+    "pbo": 0.0,
     "n_trials": 6
   },
   "robustness": {
-    "most_selected_signal": "low_volatility",
+    "most_selected_signal": "vol_scaled_momentum",
     "cost_sensitivity": {
       "0bps": {
-        "sharpe": 1.6122,
-        "cagr": 0.2159,
-        "excess_cagr": 0.0934
+        "sharpe": 1.327,
+        "cagr": 0.2836,
+        "excess_cagr": 0.1612
       },
       "10bps": {
-        "sharpe": 1.5124,
-        "cagr": 0.2007,
-        "excess_cagr": 0.0783
+        "sharpe": 1.2641,
+        "cagr": 0.2673,
+        "excess_cagr": 0.1448
       },
       "25bps": {
-        "sharpe": 1.3624,
-        "cagr": 0.1784,
-        "excess_cagr": 0.0559
+        "sharpe": 1.1695,
+        "cagr": 0.2431,
+        "excess_cagr": 0.1207
       },
       "50bps": {
-        "sharpe": 1.1119,
-        "cagr": 0.142,
-        "excess_cagr": 0.0196
+        "sharpe": 1.0115,
+        "cagr": 0.2038,
+        "excess_cagr": 0.0814
       },
       "100bps": {
-        "sharpe": 0.6123,
-        "cagr": 0.0726,
-        "excess_cagr": -0.0498
+        "sharpe": 0.6952,
+        "cagr": 0.1289,
+        "excess_cagr": 0.0064
       }
     },
     "parameter_perturbation": {
       "rebalance_1d": {
-        "sharpe": 1.2171,
-        "cagr": 0.1571
+        "sharpe": 0.9406,
+        "cagr": 0.1857
       },
       "rebalance_5d": {
-        "sharpe": 1.3624,
-        "cagr": 0.1784
+        "sharpe": 1.1695,
+        "cagr": 0.2431
       },
       "rebalance_10d": {
-        "sharpe": 1.4213,
-        "cagr": 0.1892
+        "sharpe": 1.1557,
+        "cagr": 0.24
       },
       "rebalance_21d": {
-        "sharpe": 1.4292,
-        "cagr": 0.1925
+        "sharpe": 1.1376,
+        "cagr": 0.2352
       },
       "top_decile": {
-        "sharpe": 1.2927,
-        "cagr": 0.1734
+        "sharpe": 1.196,
+        "cagr": 0.2553
       },
       "top_quintile": {
-        "sharpe": 1.3624,
-        "cagr": 0.1784
+        "sharpe": 1.1695,
+        "cagr": 0.2431
       },
       "top_third": {
-        "sharpe": 1.3842,
-        "cagr": 0.1831
+        "sharpe": 1.0742,
+        "cagr": 0.2184
       }
     },
     "concentration": {
-      "total_return": 4.5732,
-      "top_10_days_contribution": 0.4729,
-      "return_excluding_top_10_days": 2.784,
-      "sharpe_excluding_top_10_days": 0.7521,
-      "distinct_names_held": 98,
-      "mean_positions_per_day": 20.23
+      "total_return": 11.5078,
+      "top_10_days_contribution": 0.6664,
+      "return_excluding_top_10_days": 6.506,
+      "sharpe_excluding_top_10_days": 0.8261,
+      "distinct_names_held": 559,
+      "mean_positions_per_day": 53.48
     },
     "subperiod": {
       "by_year": {
-        "2014": 0.587,
-        "2015": 0.142,
-        "2016": 0.0699,
-        "2017": 0.2557,
-        "2018": 0.0612,
-        "2019": 0.0491,
-        "2020": 0.3435,
-        "2021": 0.267,
-        "2022": -0.0019,
-        "2023": 0.2422,
-        "2024": 0.1109,
-        "2025": 0.1099,
-        "2026": -0.047
+        "2014": 0.3,
+        "2015": 0.032,
+        "2016": -0.01,
+        "2017": 0.4272,
+        "2018": -0.079,
+        "2019": 0.0241,
+        "2020": 0.3038,
+        "2021": 0.8384,
+        "2022": -0.0203,
+        "2023": 0.7074,
+        "2024": 0.2105,
+        "2025": -0.069,
+        "2026": 0.0618
       },
-      "positive_years": 11,
+      "positive_years": 9,
       "total_years": 13,
       "excess_by_year": {
-        "2014": 0.1947,
-        "2015": 0.1826,
-        "2016": 0.0343,
-        "2017": -0.0308,
-        "2018": 0.0346,
-        "2019": -0.0711,
-        "2020": 0.1835,
-        "2021": 0.0258,
-        "2022": -0.0351,
-        "2023": 0.0419,
-        "2024": 0.0406,
-        "2025": 0.0048,
-        "2026": 0.0269
+        "2014": -0.084,
+        "2015": 0.0726,
+        "2016": -0.0329,
+        "2017": 0.1407,
+        "2018": -0.1086,
+        "2019": -0.0961,
+        "2020": 0.1438,
+        "2021": 0.5972,
+        "2022": -0.0427,
+        "2023": 0.5071,
+        "2024": 0.1294,
+        "2025": -0.1741,
+        "2026": 0.1357
       },
-      "positive_excess_years": 10,
+      "positive_excess_years": 7,
       "total_excess_years": 13
     },
     "regimes": {
       "bull": {
-        "days": 1060,
-        "sharpe": 3.0509,
-        "mean_daily": 0.001337,
-        "benchmark_mean_daily": 0.001218
+        "days": 1065,
+        "sharpe": 2.092,
+        "mean_daily": 0.0014,
+        "benchmark_mean_daily": 0.001248
       },
       "bear": {
-        "days": 166,
-        "sharpe": -1.807,
-        "mean_daily": -0.002127,
-        "benchmark_mean_daily": -0.00213
+        "days": 170,
+        "sharpe": -2.1491,
+        "mean_daily": -0.003454,
+        "benchmark_mean_daily": -0.002042
       },
       "sideways": {
-        "days": 1850,
-        "sharpe": 1.1043,
-        "mean_daily": 0.000508,
-        "benchmark_mean_daily": 0.000328
+        "days": 1844,
+        "sharpe": 1.142,
+        "mean_daily": 0.000782,
+        "benchmark_mean_daily": 0.000297
       }
     },
     "bootstrap": {
-      "point_estimate": 1.2559,
-      "mean": 1.2771,
-      "p05": 0.6836,
-      "p50": 1.2661,
-      "p95": 1.8929,
-      "fraction_above_zero": 1.0,
+      "point_estimate": 1.0111,
+      "mean": 1.0241,
+      "p05": 0.4656,
+      "p50": 1.028,
+      "p95": 1.5782,
+      "fraction_above_zero": 0.999,
       "n_simulations": 2000
-    },
-    "universe_sensitivity": {
-      "method": "Re-run with known Indian corporate failures added to the survivor-only universe. A hand-picked failure set is itself biased, so this bounds the effect rather than removing it.",
-      "added_symbols": 12,
-      "survivor_only": {
-        "sharpe": 0.9238,
-        "cagr": 0.1274
-      },
-      "with_failures": {
-        "sharpe": 1.4622,
-        "cagr": 0.1938
-      },
-      "sharpe_delta": 0.5384,
-      "cagr_delta": 0.0664
     }
   },
   "limitations": [
-    "SURVIVORSHIP BIAS: the universe is a present-day snapshot applied to all dates. Delisted, merged and removed companies are absent. Magnitude unknown; direction NOT reliably conservative.",
+    "POINT-IN-TIME UNIVERSE APPLIED: membership on each date requires the symbol to have been listed, still trading, and liquid over the trailing window on that date. 1 of 946 pool symbols (0.11%) stopped trading during the period and are excluded from dates after they stopped, so companies that failed are held for exactly the period they were tradeable.",
+    "RESIDUAL POOL BIAS: NSE's equity list contains only companies listed TODAY, so companies that delisted before it was published are absent unless added by name. The universe definition is point-in-time; the POOL it draws from is still incomplete by an unmeasured amount.",
     "Sector labels are current, not point-in-time; reclassified companies carry today's label backwards.",
     "NOT AVAILABLE \u2014 No intraday feed is available. The vendor serves daily bars only, so no intraday strategy can be researched or validated here.",
     "NOT AVAILABLE \u2014 No corporate-action dataset with ex-dates, split ratios or dividend amounts is available. Splits and dividends are only implicit in the vendor's adj_close, which is sufficient for computing returns and insufficient for anything that needs the event itself.",

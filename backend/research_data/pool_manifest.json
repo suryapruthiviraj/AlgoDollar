@@ -1,0 +1,10 @@
+{
+  "generated_utc": "2026-09-04T16:30:50.218684+00:00",
+  "pool_cutoff": "2012-01-01",
+  "selection_rule": "EVERY EQ-series symbol NSE reports as listed before the cutoff, plus known-delisted names from the survivorship probe. No performance, size or liquidity criterion was applied \u2014 those are decided point-in-time by the universe provider, not here.",
+  "pool_size": 928,
+  "fetched_ok": 827,
+  "already_present": 119,
+  "failed": {},
+  "residual_bias": "EQUITY_L.csv lists companies listed TODAY, so companies that delisted before today are absent unless added explicitly. The pool is therefore still incomplete; the count of names whose series ENDS before the dataset end is reported by the universe provider and is the measurable part of what remains."
+}

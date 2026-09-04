@@ -20,6 +20,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.research.datasets import DEFAULT_ROOT, build_dataset_bundle  # noqa: E402
 from app.research.study import run_study  # noqa: E402
+from app.research.universe import (  # noqa: E402
+    PointInTimeUniverse,
+    load_listing_dates,
+)
 
 OUT_JSON = DEFAULT_ROOT / "study_result.json"
 
@@ -27,30 +31,85 @@ OUT_JSON = DEFAULT_ROOT / "study_result.json"
 def main() -> int:
     bundle = build_dataset_bundle()
     manifest = bundle.manifest or {}
+    # The stress universe (known corporate failures) is no longer held back:
+    # under point-in-time membership those names are eligible only for the
+    # period they actually traded, which is the correct treatment. Recorded here
+    # for provenance so the report can say they are IN the pool.
     stress_syms = set((manifest.get("stress_universe") or {}).get("symbols") or [])
 
-    all_syms = bundle.daily.symbols()
-    # The default research universe EXCLUDES the hand-picked failure set. That
-    # set is a selected sample and belongs only in the sensitivity test; folding
-    # it into the main universe would trade survivorship bias for selection bias.
-    universe = [s for s in all_syms if s not in stress_syms]
+    # The POOL is every symbol with price history. Membership on each date is
+    # decided by the point-in-time provider, NOT by pre-filtering the pool —
+    # pre-filtering is what a survivor snapshot does.
+    #
+    # Known-delisted names are part of the pool now rather than held back for a
+    # sensitivity test: with point-in-time membership they are eligible only for
+    # the period they actually traded, which is the correct treatment. Excluding
+    # them would reintroduce the bias this whole exercise removes.
+    pool = bundle.daily.symbols()
 
-    prices = bundle.daily.panel(universe)
-    volume = bundle.daily.panel(universe, field="volume")
+    prices = bundle.daily.panel(pool)
+    volume = bundle.daily.panel(pool, field="volume")
     bench = bundle.benchmark.returns()
-    stress_prices = (
-        bundle.daily.panel(sorted(stress_syms)) if stress_syms else None
-    )
 
-    print(f"universe        : {prices.shape[1]} symbols (excl. {len(stress_syms)} stress names)")
+    pit = PointInTimeUniverse(
+        prices, volume, listing_dates=load_listing_dates(DEFAULT_ROOT)
+    )
+    umanifest = pit.manifest()
+    cov = pit.coverage()
+
+    print(f"pool            : {prices.shape[1]} symbols "
+          f"(incl. {len(stress_syms & set(pool))} known-delisted)")
     print(f"dates           : {prices.shape[0]} sessions "
           f"{prices.index[0].date()} -> {prices.index[-1].date()}")
     print(f"stale bars NaN'd: {sum(bundle.daily.stale_bars_masked.values())}")
+    print(f"stopped trading : {cov.n_stopped_trading} "
+          f"({umanifest['pool_completeness']['stopped_trading_pct']}% of pool)")
+    print(f"universe fp     : {umanifest['fingerprint']}")
+    print(f"unavailable <   : {umanifest['unavailable_before']}")
+    for when in (prices.index[100], prices.index[len(prices)//2], prices.index[-1]):
+        try:
+            n = len(pit.get_members(when))
+            print(f"  members on {when.date()}: {n}")
+        except Exception as exc:  # noqa: BLE001
+            print(f"  members on {when.date()}: UNAVAILABLE ({exc})")
     print()
 
+    dataset_fp = str((manifest.get("universe") or {}).get("source", "")) + "|" + \
+        str(len(pool)) + "|" + str(prices.index[0].date()) + "|" + \
+        str(prices.index[-1].date())
+    import hashlib as _h
+    dataset_fp = _h.sha256(dataset_fp.encode()).hexdigest()[:16]
+
+    # The bundle's limitations describe the SNAPSHOT universe it would have
+    # served. A point-in-time provider is now in force, so that sentence is no
+    # longer true and must not be carried into the report — a stale limitation
+    # is as misleading as a missing one.
+    limitations = [
+        lim for lim in bundle.limitations()
+        if "SURVIVORSHIP BIAS" not in lim.upper()
+    ]
+    limitations.insert(0, (
+        "POINT-IN-TIME UNIVERSE APPLIED: membership on each date requires the "
+        "symbol to have been listed, still trading, and liquid over the "
+        "trailing window on that date. "
+        f"{umanifest['pool_completeness']['stopped_trading']} of "
+        f"{umanifest['pool_completeness']['pool_size']} pool symbols "
+        f"({umanifest['pool_completeness']['stopped_trading_pct']}%) stopped "
+        "trading during the period and are excluded from dates after they "
+        "stopped, so companies that failed are held for exactly the period they "
+        "were tradeable."
+    ))
+    limitations.insert(1, (
+        "RESIDUAL POOL BIAS: NSE's equity list contains only companies listed "
+        "TODAY, so companies that delisted before it was published are absent "
+        "unless added by name. The universe definition is point-in-time; the "
+        "POOL it draws from is still incomplete by an unmeasured amount."
+    ))
+
     result = run_study(
-        prices, benchmark=bench, stress_prices=stress_prices,
-        limitations=bundle.limitations(), volume=volume,
+        prices, benchmark=bench, stress_prices=None,
+        limitations=limitations, volume=volume,
+        universe=pit, dataset_fingerprint=dataset_fp,
     )
 
     print("=== IN-SAMPLE (reference only, NOT evidence) ===")
@@ -97,6 +156,15 @@ def main() -> int:
         print(f"  [{'PASS' if c.passed else 'FAIL'}] {c.name:26} "
               f"observed={c.observed}  threshold={c.threshold}")
 
+    if result.provenance:
+        p = result.provenance
+        print("\n=== PROVENANCE ===")
+        print(f"  experiment_id      : {p.experiment_id}")
+        print(f"  dataset            : {p.dataset_fingerprint}")
+        print(f"  universe           : {p.universe_fingerprint}")
+        print(f"  strategy           : {p.strategy_version}")
+        print(f"  validation period  : {p.validation_start} -> {p.validation_end}")
+
     print(f"\n=== VERDICT: {result.verdict} ===")
     print("\nLIMITATIONS:")
     for lim in result.limitations:
@@ -105,6 +173,8 @@ def main() -> int:
     doc = {
         "generated_utc": datetime.now(timezone.utc).isoformat(),
         "verdict": result.verdict,
+        "provenance": result.provenance.to_dict() if result.provenance else None,
+        "universe_manifest": umanifest,
         "universe_size": int(prices.shape[1]),
         "sessions": int(prices.shape[0]),
         "date_range": [str(prices.index[0].date()), str(prices.index[-1].date())],
