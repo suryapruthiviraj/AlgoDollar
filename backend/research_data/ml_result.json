@@ -1,0 +1,57 @@
+{
+  "trained": true,
+  "reason": "",
+  "oos_sharpe": 0.8088,
+  "oos_cagr": 0.1649,
+  "oos_ic_mean": 0.00842,
+  "baseline_best_sharpe": 1.2559,
+  "baseline_best_name": "walk-forward baseline",
+  "improvement": -0.4471,
+  "verdict": "ML REJECTED \u2014 no meaningful improvement over the simple baseline",
+  "folds": [
+    {
+      "fold": 0,
+      "train_end": "2015-01-20",
+      "test_start": "2015-02-12",
+      "test_end": "2018-01-05",
+      "n_train": 28541,
+      "n_test": 52678,
+      "mean_ic": 0.0117
+    },
+    {
+      "fold": 1,
+      "train_end": "2017-12-14",
+      "test_start": "2018-01-08",
+      "test_end": "2020-12-03",
+      "n_train": 79824,
+      "n_test": 68954,
+      "mean_ic": 0.00724
+    },
+    {
+      "fold": 2,
+      "train_end": "2020-11-11",
+      "test_start": "2020-12-04",
+      "test_end": "2023-10-25",
+      "n_train": 148658,
+      "n_test": 72472,
+      "mean_ic": 0.01435
+    },
+    {
+      "fold": 3,
+      "train_end": "2023-10-03",
+      "test_start": "2023-10-26",
+      "test_end": "2026-09-03",
+      "n_train": 221040,
+      "n_test": 35488,
+      "mean_ic": 0.0004
+    }
+  ],
+  "feature_names": [
+    "mom_12_1",
+    "mom_6_1",
+    "range_pos_126",
+    "reversal_21",
+    "trend_50_200",
+    "vol_63"
+  ]
+}

@@ -126,3 +126,12 @@ data_cache/
 # Both are per-deployment, both are regenerated, and the audit journal is
 # operational evidence rather than something a clone should inherit.
 backend/data/
+
+# Acquired market data: 17MB of Parquet, reproducible via
+# backend/scripts/acquire_data.py. The DERIVED manifests are tracked (see the
+# negations below) because they are the evidence for what any result was
+# computed on — the bytes are not, because a vendor snapshot in git rots.
+backend/research_data/prices/
+backend/research_data/*.parquet
+!backend/research_data/manifest.json
+!backend/research_data/data_audit.json

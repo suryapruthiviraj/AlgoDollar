@@ -1144,12 +1144,17 @@ def test_current_repo_state_is_data_blocked():
     """
     The honest status of this repository today.
 
-    Real daily NSE OHLCV now exists, so the price-history gate passes, and the
-    verdict is now actually ENFORCED on the order path. Nothing else passes:
-    the data is not current, there are no point-in-time index constituents, no
-    point-in-time fundamentals and essentially no intraday history, and no
-    statistical, performance, execution, risk or operational result has ever
-    been persisted.
+    Real daily NSE OHLCV exists, so the price-history gate passes; the verdict
+    is ENFORCED on the order path; and a real research study has now run, so
+    several STATISTICAL gates pass on measured numbers rather than on nothing.
+
+    The system is still BLOCKED, and the reason is a data gate rather than a
+    statistical one: there are no point-in-time index constituents, no
+    point-in-time fundamentals and essentially no intraday history. The study's
+    own verdict is NOT VALIDATED for precisely that reason — a strong result
+    measured on a universe containing no company that failed is a strong
+    description of the bias. No performance, execution, risk or operational
+    result has ever been persisted.
 
     `enforcement_wired_into_order_path` was previously among the FAILING gates,
     which was the most serious finding of the eligibility audit: the verdict
@@ -1180,22 +1185,50 @@ def test_current_repo_state_is_data_blocked():
         "eligibility is no longer enforced on the order path"
     )
 
-    # No research result exists, so every non-data category is unproven — with
-    # exactly one exception. `enforcement_wired_into_order_path` is an EXECUTION
-    # gate that asserts a property of THIS CODEBASE (does the order path call
-    # require_live_eligible?) rather than a property of a broker session, so it
-    # can be satisfied by writing code. Everything else in these categories
-    # needs evidence from a real broker, a real backtest or a real paper run,
-    # none of which exists.
-    proven_by_code_alone = {"enforcement_wired_into_order_path"}
+    # STATISTICAL is deliberately EXCLUDED from the sweep below.
+    #
+    # A real research study now exists: scripts/run_research.py ran purged,
+    # embargoed walk-forward folds over 108 real NSE symbols and wrote
+    # research_data/study_result.json, and gather_repo_evidence() reads its
+    # numbers. Several statistical gates therefore pass on genuine measurement,
+    # which is what they are for.
+    #
+    # That is NOT a step towards live trading, and the assertions above still
+    # hold: the study's own verdict is NOT VALIDATED because the universe is a
+    # present-day snapshot, `point_in_time_index_constituents` still fails, and
+    # the report still says BLOCKED_INSUFFICIENT_DATA. Passing a statistical
+    # gate measured on a survivorship-biased universe is exactly why the data
+    # gates exist — see docs/RESEARCH_VALIDATION.md.
+    assert "point_in_time_index_constituents" in failed, (
+        "a statistical result is being trusted on a universe that excludes "
+        "every company that failed"
+    )
 
-    for category in (GateCategory.STATISTICAL, GateCategory.PERFORMANCE,
+    # For the remaining categories nothing has been established. The one
+    # exception, `enforcement_wired_into_order_path`, is an EXECUTION gate
+    # asserting a property of THIS CODEBASE (does the order path call
+    # require_live_eligible?) rather than of a broker session, so it can be
+    # satisfied by writing code. Everything else needs evidence from a real
+    # broker or a real paper run, none of which exists.
+    already_established = {
+        # An EXECUTION gate asserting a property of THIS CODEBASE — does the
+        # order path call require_live_eligible()? — so it is satisfied by
+        # writing code rather than by a broker session.
+        "enforcement_wired_into_order_path",
+        # A PERFORMANCE gate reading the walk-forward out-of-sample Sharpe, and
+        # the same at stressed costs, from research_data/study_result.json.
+        # Measured, on the same survivorship-biased universe that keeps the
+        # overall verdict at NOT VALIDATED.
+        "oos_sharpe_floor",
+    }
+
+    for category in (GateCategory.PERFORMANCE,
                      GateCategory.EXECUTION, GateCategory.OPERATIONAL):
         in_cat = [r for r in report.results if r.category is category]
         assert in_cat, category
         unexpectedly_passing = [
             r.name for r in in_cat
-            if r.passed and r.name not in proven_by_code_alone
+            if r.passed and r.name not in already_established
         ]
         assert not unexpectedly_passing, (
             f"{category} gate(s) passing without evidence: {unexpectedly_passing}"
@@ -1209,11 +1242,19 @@ def test_repo_evidence_reports_paper_mode():
 
 
 def test_repo_evidence_leaves_unmeasured_fields_unknown():
-    """Nothing may be invented. Unmeasured means None, and None fails."""
+    """
+    Nothing may be invented. Unmeasured means None, and None fails.
+
+    The STATISTICAL fields are no longer in this list because they are now
+    genuinely measured: gather_repo_evidence() reads them out of
+    research_data/study_result.json, which scripts/run_research.py produced from
+    real NSE data. Read-from-a-real-study and invented are different things, and
+    the guard below still covers everything that remains unmeasured — execution,
+    risk and operational facts that nothing in this repository has established.
+    """
     evidence = gather_repo_evidence()
     for name in (
-        "deflated_sharpe_ratio", "probability_of_backtest_overfitting", "oos_sharpe",
-        "max_drawdown", "n_trials_recorded", "purged_walk_forward_completed",
+        "max_drawdown",
         "broker_auth_verified", "kill_switch_verified", "paper_trading_days",
         "live_enable_approved_by", "broker_reachable_at", "broker_session_valid",
         "last_reconciliation_at", "last_reconciliation_succeeded",
@@ -1221,6 +1262,50 @@ def test_repo_evidence_leaves_unmeasured_fields_unknown():
         "market_data_feed_healthy",
     ):
         assert getattr(evidence, name) is None, f"{name} was invented"
+
+
+def test_repo_statistical_evidence_comes_from_the_study_file():
+    """
+    Every statistical value must be traceable to study_result.json.
+
+    This is the counterpart to the guard above: those fields are allowed to be
+    populated ONLY because a real study produced them, so the test checks they
+    match the file rather than merely being non-None.
+    """
+    import json
+
+    from app.research.datasets import DEFAULT_ROOT
+
+    path = DEFAULT_ROOT / "study_result.json"
+    if not path.exists():
+        evidence = gather_repo_evidence()
+        assert evidence.deflated_sharpe_ratio is None, (
+            "statistical evidence exists with no study file to justify it"
+        )
+        return
+
+    study = json.loads(path.read_text())
+    oos = study.get("out_of_sample") or {}
+    evidence = gather_repo_evidence()
+    assert evidence.oos_sharpe == oos.get("sharpe")
+    assert evidence.deflated_sharpe_ratio == oos.get("deflated_sharpe_ratio")
+    assert evidence.n_trials_recorded == oos.get("n_trials")
+
+
+def test_a_non_validated_study_is_recorded_as_blocking():
+    """The verdict must reach the evidence, not just the report file."""
+    import json
+
+    from app.research.datasets import DEFAULT_ROOT
+
+    path = DEFAULT_ROOT / "study_result.json"
+    if not path.exists():
+        return
+    verdict = json.loads(path.read_text()).get("verdict")
+    notes = " ".join(gather_repo_evidence().notes)
+    assert f"Research study verdict: {verdict}" in notes
+    if verdict != "VALIDATED":
+        assert "NO VALIDATED STRATEGY" in notes
 
 
 def test_repo_evidence_is_freshly_stamped():

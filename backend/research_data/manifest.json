@@ -1,0 +1,1640 @@
+{
+  "created_utc": "2026-09-04T12:05:44.050632+00:00",
+  "requested": {
+    "symbols": 120,
+    "start": "2012-01-01",
+    "end": "2026-09-04"
+  },
+  "source": {
+    "vendor": "Yahoo Finance",
+    "accessor": "yfinance",
+    "adjustment": "auto_adjust=False; both `close` (unadjusted) and `adj_close` (split+dividend adjusted) are stored. Returns MUST be computed from adj_close; using close silently books every split as a price crash."
+  },
+  "universe": {
+    "source": "StockUniverse.get_nifty500_symbols()",
+    "point_in_time": false,
+    "limitation": "SURVIVORSHIP BIAS: this is a PRESENT-DAY membership snapshot, not point-in-time index membership. Every symbol in it survived and remained listed to today. Any performance measured on this universe is biased by an unknown amount, and the direction is NOT reliably conservative \u2014 see docs/DATA_INTEGRITY_REPORT.md."
+  },
+  "symbols_ok": {
+    "RELIANCE": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "RELIANCE.parquet"
+    },
+    "TCS": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "TCS.parquet"
+    },
+    "HDFCBANK": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "HDFCBANK.parquet"
+    },
+    "ICICIBANK": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "ICICIBANK.parquet"
+    },
+    "INFY": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "INFY.parquet"
+    },
+    "HINDUNILVR": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "HINDUNILVR.parquet"
+    },
+    "ITC": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "ITC.parquet"
+    },
+    "SBIN": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "SBIN.parquet"
+    },
+    "BAJFINANCE": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "BAJFINANCE.parquet"
+    },
+    "BHARTIARTL": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "BHARTIARTL.parquet"
+    },
+    "KOTAKBANK": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "KOTAKBANK.parquet"
+    },
+    "LT": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "LT.parquet"
+    },
+    "AXISBANK": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "AXISBANK.parquet"
+    },
+    "ASIANPAINT": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "ASIANPAINT.parquet"
+    },
+    "MARUTI": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "MARUTI.parquet"
+    },
+    "SUNPHARMA": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "SUNPHARMA.parquet"
+    },
+    "TITAN": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "TITAN.parquet"
+    },
+    "ULTRACEMCO": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "ULTRACEMCO.parquet"
+    },
+    "WIPRO": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "WIPRO.parquet"
+    },
+    "NESTLEIND": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "NESTLEIND.parquet"
+    },
+    "POWERGRID": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "POWERGRID.parquet"
+    },
+    "NTPC": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "NTPC.parquet"
+    },
+    "HCLTECH": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "HCLTECH.parquet"
+    },
+    "M&M": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "M&M.parquet"
+    },
+    "BAJAJFINSV": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "BAJAJFINSV.parquet"
+    },
+    "TECHM": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "TECHM.parquet"
+    },
+    "ADANIPORTS": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "ADANIPORTS.parquet"
+    },
+    "COALINDIA": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "COALINDIA.parquet"
+    },
+    "ONGC": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "ONGC.parquet"
+    },
+    "DRREDDY": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "DRREDDY.parquet"
+    },
+    "JSWSTEEL": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "JSWSTEEL.parquet"
+    },
+    "TATASTEEL": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "TATASTEEL.parquet"
+    },
+    "BPCL": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "BPCL.parquet"
+    },
+    "CIPLA": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "CIPLA.parquet"
+    },
+    "DIVISLAB": {
+      "rows": 3622,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "DIVISLAB.parquet"
+    },
+    "EICHERMOT": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "EICHERMOT.parquet"
+    },
+    "UPL": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "UPL.parquet"
+    },
+    "APOLLOHOSP": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "APOLLOHOSP.parquet"
+    },
+    "BRITANNIA": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "BRITANNIA.parquet"
+    },
+    "HEROMOTOCO": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "HEROMOTOCO.parquet"
+    },
+    "GRASIM": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "GRASIM.parquet"
+    },
+    "HINDALCO": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "HINDALCO.parquet"
+    },
+    "SBILIFE": {
+      "rows": 2208,
+      "first": "2017-10-03",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "SBILIFE.parquet"
+    },
+    "HDFCLIFE": {
+      "rows": 2176,
+      "first": "2017-11-17",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "HDFCLIFE.parquet"
+    },
+    "INDUSINDBK": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "INDUSINDBK.parquet"
+    },
+    "IOC": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "IOC.parquet"
+    },
+    "TATACONSUM": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "TATACONSUM.parquet"
+    },
+    "SHREECEM": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "SHREECEM.parquet"
+    },
+    "PIDILITIND": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "PIDILITIND.parquet"
+    },
+    "AMBUJACEM": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "AMBUJACEM.parquet"
+    },
+    "DMART": {
+      "rows": 2341,
+      "first": "2017-03-21",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "DMART.parquet"
+    },
+    "NAUKRI": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "NAUKRI.parquet"
+    },
+    "BERGEPAINT": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "BERGEPAINT.parquet"
+    },
+    "ICICIGI": {
+      "rows": 2211,
+      "first": "2017-09-27",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "ICICIGI.parquet"
+    },
+    "COLPAL": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "COLPAL.parquet"
+    },
+    "PAGEIND": {
+      "rows": 3621,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "PAGEIND.parquet"
+    },
+    "SRF": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "SRF.parquet"
+    },
+    "TORNTPHARM": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "TORNTPHARM.parquet"
+    },
+    "GODREJCP": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "GODREJCP.parquet"
+    },
+    "BIOCON": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "BIOCON.parquet"
+    },
+    "AUROPHARMA": {
+      "rows": 3622,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "AUROPHARMA.parquet"
+    },
+    "LUPIN": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "LUPIN.parquet"
+    },
+    "BALKRISIND": {
+      "rows": 3622,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "BALKRISIND.parquet"
+    },
+    "HAVELLS": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "HAVELLS.parquet"
+    },
+    "MUTHOOTFIN": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "MUTHOOTFIN.parquet"
+    },
+    "JUBLFOOD": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "JUBLFOOD.parquet"
+    },
+    "BANDHANBNK": {
+      "rows": 2088,
+      "first": "2018-03-27",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "BANDHANBNK.parquet"
+    },
+    "FEDERALBNK": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "FEDERALBNK.parquet"
+    },
+    "IDFCFIRSTB": {
+      "rows": 2676,
+      "first": "2015-11-06",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "IDFCFIRSTB.parquet"
+    },
+    "PNB": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "PNB.parquet"
+    },
+    "CANBK": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "CANBK.parquet"
+    },
+    "BOSCHLTD": {
+      "rows": 3622,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "BOSCHLTD.parquet"
+    },
+    "TVSMOTOR": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "TVSMOTOR.parquet"
+    },
+    "MOTHERSON": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "MOTHERSON.parquet"
+    },
+    "BAJAJ-AUTO": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "BAJAJ-AUTO.parquet"
+    },
+    "GAIL": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "GAIL.parquet"
+    },
+    "CHOLAFIN": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "CHOLAFIN.parquet"
+    },
+    "LICHSGFIN": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "LICHSGFIN.parquet"
+    },
+    "RECLTD": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "RECLTD.parquet"
+    },
+    "PFC": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "PFC.parquet"
+    },
+    "NHPC": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "NHPC.parquet"
+    },
+    "TATAPOWER": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "TATAPOWER.parquet"
+    },
+    "ADANIENT": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "ADANIENT.parquet"
+    },
+    "ADANIGREEN": {
+      "rows": 2032,
+      "first": "2018-06-18",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "ADANIGREEN.parquet"
+    },
+    "SIEMENS": {
+      "rows": 3622,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "SIEMENS.parquet"
+    },
+    "ABB": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "ABB.parquet"
+    },
+    "VOLTAS": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "VOLTAS.parquet"
+    },
+    "WHIRLPOOL": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "WHIRLPOOL.parquet"
+    },
+    "BLUESTARCO": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "BLUESTARCO.parquet"
+    },
+    "MARICO": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "MARICO.parquet"
+    },
+    "EMAMILTD": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "EMAMILTD.parquet"
+    },
+    "DABUR": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "DABUR.parquet"
+    },
+    "PAYTM": {
+      "rows": 1189,
+      "first": "2021-11-18",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "PAYTM.parquet"
+    },
+    "NYKAA": {
+      "rows": 1195,
+      "first": "2021-11-10",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "NYKAA.parquet"
+    },
+    "POLICYBZR": {
+      "rows": 1191,
+      "first": "2021-11-15",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "POLICYBZR.parquet"
+    },
+    "CARTRADE": {
+      "rows": 1250,
+      "first": "2021-08-20",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "CARTRADE.parquet"
+    },
+    "EASEMYTRIP": {
+      "rows": 1353,
+      "first": "2021-03-19",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "EASEMYTRIP.parquet"
+    },
+    "IRCTC": {
+      "rows": 1711,
+      "first": "2019-10-14",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "IRCTC.parquet"
+    },
+    "HAPPSTMNDS": {
+      "rows": 1479,
+      "first": "2020-09-17",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "HAPPSTMNDS.parquet"
+    },
+    "MPHASIS": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "MPHASIS.parquet"
+    },
+    "COFORGE": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "COFORGE.parquet"
+    },
+    "PERSISTENT": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "PERSISTENT.parquet"
+    },
+    "LTTS": {
+      "rows": 2461,
+      "first": "2016-09-23",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "LTTS.parquet"
+    },
+    "TATAELXSI": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "TATAELXSI.parquet"
+    },
+    "KPITTECH": {
+      "rows": 1827,
+      "first": "2019-04-22",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "KPITTECH.parquet"
+    },
+    "MANAPPURAM": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "MANAPPURAM.parquet"
+    },
+    "BAJAJHLDNG": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "BAJAJHLDNG.parquet"
+    },
+    "TATAINVEST": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "adj_close",
+        "volume"
+      ],
+      "file": "TATAINVEST.parquet"
+    }
+  },
+  "symbols_failed": {
+    "TATAMOTORS": "no data returned",
+    "LTIM": "no data returned",
+    "MCDOWELL-N": "no data returned",
+    "PVR": "no data returned",
+    "ADANITRANS": "no data returned",
+    "ADANIGAS": "no data returned",
+    "ZOMATO": "no data returned",
+    "MASTECH": "no data returned",
+    "NIITTECH": "no data returned",
+    "HEXAWARE": "no data returned",
+    "HDFC": "no data returned",
+    "GRUH": "no data returned"
+  },
+  "benchmark": {
+    "symbol": "^NSEI",
+    "status": "OK",
+    "rows": 3603,
+    "first": "2012-01-03",
+    "last": "2026-09-03",
+    "file": "benchmark.parquet"
+  },
+  "known_gaps": {
+    "corporate_actions": "NOT AVAILABLE as a separate dataset. Splits and dividends are only implicit in adj_close. Ex-dates, ratios and dividend amounts are NOT obtainable here, so any analysis needing them is a stated research limitation, not something to approximate.",
+    "delistings": "NOT AVAILABLE. Delisted names are absent from the universe entirely, which is the survivorship problem above.",
+    "symbol_changes": "NOT AVAILABLE. A renamed ticker appears as a new symbol with truncated history; no mapping table exists here.",
+    "fundamentals": "NOT AVAILABLE point-in-time. No provider here supplies fundamentals with publication dates, so any value/quality factor would carry look-ahead bias of unknown size.",
+    "intraday": "NOT AVAILABLE. Daily bars only."
+  },
+  "stress_universe": {
+    "purpose": "Known Indian corporate failures, stored alongside the survivor universe so a UNIVERSE SENSITIVITY test can measure how much the survivor-only result depends on their absence. These names are NOT part of the default research universe: a hand-picked set of failures is itself a selected sample, so including them by default would swap one bias for another.",
+    "symbols": [
+      "GTLINFRA",
+      "IDEA",
+      "IL&FSENGG",
+      "JETAIRWAYS",
+      "KTKBANK",
+      "PNB",
+      "RCOM",
+      "RELINFRA",
+      "RPOWER",
+      "SUZLON",
+      "UNITECH",
+      "YESBANK"
+    ],
+    "detail": {
+      "RCOM": {
+        "rows": 3622,
+        "first": "2012-01-02",
+        "last": "2026-09-03"
+      },
+      "JETAIRWAYS": {
+        "rows": 3623,
+        "first": "2012-01-02",
+        "last": "2026-09-03"
+      },
+      "YESBANK": {
+        "rows": 3623,
+        "first": "2012-01-02",
+        "last": "2026-09-03"
+      },
+      "SUZLON": {
+        "rows": 3623,
+        "first": "2012-01-02",
+        "last": "2026-09-03"
+      },
+      "KTKBANK": {
+        "rows": 3623,
+        "first": "2012-01-02",
+        "last": "2026-09-03"
+      },
+      "PNB": {
+        "rows": 3623,
+        "first": "2012-01-02",
+        "last": "2026-09-03"
+      },
+      "IDEA": {
+        "rows": 3623,
+        "first": "2012-01-02",
+        "last": "2026-09-03"
+      },
+      "RPOWER": {
+        "rows": 3623,
+        "first": "2012-01-02",
+        "last": "2026-09-03"
+      },
+      "RELINFRA": {
+        "rows": 3623,
+        "first": "2012-01-02",
+        "last": "2026-09-03"
+      },
+      "GTLINFRA": {
+        "rows": 3623,
+        "first": "2012-01-02",
+        "last": "2026-09-03"
+      },
+      "UNITECH": {
+        "rows": 3623,
+        "first": "2012-01-02",
+        "last": "2026-09-03"
+      },
+      "IL&FSENGG": {
+        "rows": 3621,
+        "first": "2012-01-02",
+        "last": "2026-09-03"
+      }
+    }
+  }
+}

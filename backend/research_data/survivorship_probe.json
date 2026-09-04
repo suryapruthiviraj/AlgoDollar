@@ -1,0 +1,131 @@
+{
+  "generated_utc": "2026-09-04T13:45:03.641540+00:00",
+  "method": "Hand-listed Indian corporate failures fetched from the same vendor as the research dataset. A PROBE, not a reconstructed point-in-time universe: the names were selected because they failed, so their statistics are a biased sample of the missing tail and must NOT be merged into a backtest.",
+  "controls": {
+    "RELIANCE": 3623,
+    "TCS": 3623,
+    "INFY": 3623
+  },
+  "counts": {
+    "probed": 16,
+    "reachable": 13,
+    "unreachable": 3
+  },
+  "summary": {
+    "reachable_with_negative_total_return": 10,
+    "mean_total_return": NaN,
+    "mean_max_drawdown": NaN
+  },
+  "reachable": {
+    "RCOM": {
+      "note": "Reliance Communications \u2014 insolvency 2019",
+      "rows": 3622,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "total_return": -0.989,
+      "max_drawdown": -0.9966
+    },
+    "JETAIRWAYS": {
+      "note": "Jet Airways \u2014 ceased operations 2019",
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "total_return": -0.8023,
+      "max_drawdown": -0.9843
+    },
+    "YESBANK": {
+      "note": "Yes Bank \u2014 near-failure, RBI reconstruction 2020 (still listed)",
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "total_return": -0.4695,
+      "max_drawdown": -0.9722
+    },
+    "SUZLON": {
+      "note": "Suzlon Energy \u2014 debt restructuring, ~99% drawdown",
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "total_return": 1.7773,
+      "max_drawdown": -0.9516
+    },
+    "VIDEOIND": {
+      "note": "Videocon Industries \u2014 insolvency",
+      "rows": 1,
+      "first": "2026-07-17",
+      "last": "2026-07-17",
+      "total_return": NaN,
+      "max_drawdown": NaN
+    },
+    "KTKBANK": {
+      "note": "Karnataka Bank \u2014 control name, expected to survive",
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "total_return": 9.4742,
+      "max_drawdown": -0.7675
+    },
+    "PNB": {
+      "note": "Punjab National Bank \u2014 Nirav Modi fraud 2018, control name",
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "total_return": -0.0632,
+      "max_drawdown": -0.8793
+    },
+    "IDEA": {
+      "note": "Vodafone Idea \u2014 near-failure, ~95% drawdown",
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "total_return": -0.7063,
+      "max_drawdown": -0.9756
+    },
+    "RPOWER": {
+      "note": "Reliance Power \u2014 ~98% drawdown",
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "total_return": -0.6785,
+      "max_drawdown": -0.9922
+    },
+    "RELINFRA": {
+      "note": "Reliance Infrastructure \u2014 ~95% drawdown",
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "total_return": -0.8109,
+      "max_drawdown": -0.9878
+    },
+    "GTLINFRA": {
+      "note": "GTL Infrastructure \u2014 penny stock after collapse",
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "total_return": -0.8718,
+      "max_drawdown": -0.9855
+    },
+    "UNITECH": {
+      "note": "Unitech \u2014 fraud, suspended",
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "total_return": -0.8073,
+      "max_drawdown": -0.9913
+    },
+    "IL&FSENGG": {
+      "note": "IL&FS Engineering \u2014 IL&FS collapse 2018",
+      "rows": 3621,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "total_return": -0.3,
+      "max_drawdown": -0.9855
+    }
+  },
+  "unreachable": {
+    "DHFL": "Dewan Housing \u2014 collapsed 2019, insolvency, delisted | no data returned",
+    "ALOKTEXT": "Alok Industries \u2014 insolvency | no data returned",
+    "JPASSOCIAT": "Jaiprakash Associates \u2014 insolvency | no data returned"
+  },
+  "interpretation": "Names the vendor cannot serve are permanently absent from any backtest run here. Names it CAN serve are absent only because the universe list is a present-day snapshot \u2014 which means the survivorship gap is partly a UNIVERSE CONSTRUCTION problem, not purely a data availability one."
+}

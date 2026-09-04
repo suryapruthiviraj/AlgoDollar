@@ -70,8 +70,11 @@ class MarketDataBroker(BrokerInterface):
         carrying at least a ``close`` column and a DatetimeIndex.
         :class:`app.data.providers.YahooDataProvider` satisfies this.
     suffix
-        Appended to bare symbols for the provider's namespace. Yahoo lists NSE
-        equities as ``RELIANCE.NS``.
+        Appended to bare symbols ONLY when the provider does not namespace them
+        itself. Defaults to EMPTY: ``YahooDataProvider.fetch_symbol`` already
+        builds ``f"{symbol}.NS"`` internally, so passing ``.NS`` here produced
+        ``RELIANCE.NS.NS``, a 404 from Yahoo, and an empty quote dict for every
+        symbol — this feed could not price anything in production.
     lookback_days
         How far back to request in order to obtain the most recent bar.
     """
@@ -80,7 +83,7 @@ class MarketDataBroker(BrokerInterface):
         self,
         provider: Any,
         *,
-        suffix: str = ".NS",
+        suffix: str = "",
         lookback_days: int = 10,
         quote_ttl_sec: float = 60.0,
     ) -> None:

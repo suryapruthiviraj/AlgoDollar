@@ -1,0 +1,366 @@
+{
+  "generated_utc": "2026-09-04T14:00:12.382130+00:00",
+  "verdict": "NOT VALIDATED",
+  "universe_size": 107,
+  "sessions": 3623,
+  "date_range": [
+    "2012-01-02",
+    "2026-09-03"
+  ],
+  "criteria": [
+    {
+      "name": "oos_sharpe",
+      "passed": true,
+      "observed": 1.2559,
+      "threshold": 0.5,
+      "detail": "Walk-forward out-of-sample Sharpe, net of costs."
+    },
+    {
+      "name": "bootstrap_lower_bound",
+      "passed": true,
+      "observed": 0.6836,
+      "threshold": 0.0,
+      "detail": "5th percentile of the stationary-bootstrap Sharpe distribution."
+    },
+    {
+      "name": "deflated_sharpe",
+      "passed": true,
+      "observed": 0.9982,
+      "threshold": 0.95,
+      "detail": "P(true Sharpe > 0) after deflating for 6 trials."
+    },
+    {
+      "name": "pbo",
+      "passed": true,
+      "observed": 0.0143,
+      "threshold": 0.5,
+      "detail": "Probability the in-sample winner underperforms out-of-sample."
+    },
+    {
+      "name": "excess_cagr_vs_benchmark",
+      "passed": true,
+      "observed": 0.0481,
+      "threshold": 0.0,
+      "detail": "Out-of-sample CAGR minus benchmark CAGR over the same dates."
+    },
+    {
+      "name": "survives_double_costs",
+      "passed": true,
+      "observed": 1.1119,
+      "threshold": 0.5,
+      "detail": "In-sample Sharpe at 50bps/side."
+    },
+    {
+      "name": "consistent_across_years",
+      "passed": true,
+      "observed": 0.7692,
+      "threshold": 0.55,
+      "detail": "Fraction of out-of-sample years with positive excess return."
+    },
+    {
+      "name": "point_in_time_universe",
+      "passed": false,
+      "observed": "present-day snapshot",
+      "threshold": "point-in-time",
+      "detail": "A universe that excludes delisted companies cannot support a validation claim, however strong the statistics computed on it."
+    }
+  ],
+  "in_sample": {
+    "momentum_12_1": {
+      "sharpe": 0.5987,
+      "cagr": 0.1105,
+      "max_drawdown": -0.4345,
+      "excess_cagr": -0.012,
+      "beta": 1.0016,
+      "turnover_annual": 20.88,
+      "cost_drag_annual": 0.0522,
+      "NOTE": "IN-SAMPLE, full period. NOT evidence of anything."
+    },
+    "short_term_reversal": {
+      "sharpe": 0.3355,
+      "cagr": 0.0517,
+      "max_drawdown": -0.542,
+      "excess_cagr": -0.0708,
+      "beta": 1.1473,
+      "turnover_annual": 51.0,
+      "cost_drag_annual": 0.1275,
+      "NOTE": "IN-SAMPLE, full period. NOT evidence of anything."
+    },
+    "trend_50_200": {
+      "sharpe": 0.5693,
+      "cagr": 0.0939,
+      "max_drawdown": -0.3969,
+      "excess_cagr": -0.0285,
+      "beta": 0.8198,
+      "turnover_annual": 12.31,
+      "cost_drag_annual": 0.0308,
+      "NOTE": "IN-SAMPLE, full period. NOT evidence of anything."
+    },
+    "low_volatility": {
+      "sharpe": 0.9238,
+      "cagr": 0.1274,
+      "max_drawdown": -0.3371,
+      "excess_cagr": 0.005,
+      "beta": 0.7502,
+      "turnover_annual": 21.71,
+      "cost_drag_annual": 0.0543,
+      "NOTE": "IN-SAMPLE, full period. NOT evidence of anything."
+    },
+    "breakout_126d": {
+      "sharpe": 0.0933,
+      "cagr": 0.0005,
+      "max_drawdown": -0.5118,
+      "excess_cagr": -0.122,
+      "beta": 0.8655,
+      "turnover_annual": 46.5,
+      "cost_drag_annual": 0.1164,
+      "NOTE": "IN-SAMPLE, full period. NOT evidence of anything."
+    },
+    "vol_scaled_momentum": {
+      "sharpe": 0.5345,
+      "cagr": 0.0859,
+      "max_drawdown": -0.4398,
+      "excess_cagr": -0.0365,
+      "beta": 0.9144,
+      "turnover_annual": 21.36,
+      "cost_drag_annual": 0.0535,
+      "NOTE": "IN-SAMPLE, full period. NOT evidence of anything."
+    }
+  },
+  "folds": [
+    {
+      "fold": 0,
+      "train_start": "2012-01-02",
+      "train_end": "2014-01-15",
+      "test_start": "2014-01-30",
+      "test_end": "2016-03-14",
+      "selected_signal": "low_volatility",
+      "train_sharpe": 2.0541,
+      "test_sharpe": 2.1926,
+      "test_return": 0.7236
+    },
+    {
+      "fold": 1,
+      "train_start": "2012-01-02",
+      "train_end": "2016-02-26",
+      "test_start": "2016-03-15",
+      "test_end": "2018-04-20",
+      "selected_signal": "low_volatility",
+      "train_sharpe": 2.0166,
+      "test_sharpe": 1.9822,
+      "test_return": 0.4783
+    },
+    {
+      "fold": 2,
+      "train_start": "2012-01-02",
+      "train_end": "2018-04-06",
+      "test_start": "2018-04-23",
+      "test_end": "2020-06-05",
+      "selected_signal": "low_volatility",
+      "train_sharpe": 2.014,
+      "test_sharpe": 0.1391,
+      "test_return": 0.0176
+    },
+    {
+      "fold": 3,
+      "train_start": "2012-01-02",
+      "train_end": "2020-05-21",
+      "test_start": "2020-06-08",
+      "test_end": "2022-07-04",
+      "selected_signal": "low_volatility",
+      "train_sharpe": 1.2546,
+      "test_sharpe": 1.8313,
+      "test_return": 0.6583
+    },
+    {
+      "fold": 4,
+      "train_start": "2012-01-02",
+      "train_end": "2022-06-20",
+      "test_start": "2022-07-05",
+      "test_end": "2024-08-13",
+      "selected_signal": "low_volatility",
+      "train_sharpe": 1.4099,
+      "test_sharpe": 2.227,
+      "test_return": 0.5657
+    },
+    {
+      "fold": 5,
+      "train_start": "2012-01-02",
+      "train_end": "2024-07-30",
+      "test_start": "2024-08-14",
+      "test_end": "2026-09-03",
+      "selected_signal": "low_volatility",
+      "train_sharpe": 1.5752,
+      "test_sharpe": 0.0537,
+      "test_return": -0.0013
+    }
+  ],
+  "out_of_sample": {
+    "n_observations": 3085,
+    "sharpe": 1.2559,
+    "cagr": 0.1684,
+    "benchmark_cagr": 0.1203,
+    "excess_cagr": 0.0481,
+    "deflated_sharpe_ratio": 0.9982,
+    "pbo": 0.0143,
+    "n_trials": 6
+  },
+  "robustness": {
+    "most_selected_signal": "low_volatility",
+    "cost_sensitivity": {
+      "0bps": {
+        "sharpe": 1.6122,
+        "cagr": 0.2159,
+        "excess_cagr": 0.0934
+      },
+      "10bps": {
+        "sharpe": 1.5124,
+        "cagr": 0.2007,
+        "excess_cagr": 0.0783
+      },
+      "25bps": {
+        "sharpe": 1.3624,
+        "cagr": 0.1784,
+        "excess_cagr": 0.0559
+      },
+      "50bps": {
+        "sharpe": 1.1119,
+        "cagr": 0.142,
+        "excess_cagr": 0.0196
+      },
+      "100bps": {
+        "sharpe": 0.6123,
+        "cagr": 0.0726,
+        "excess_cagr": -0.0498
+      }
+    },
+    "parameter_perturbation": {
+      "rebalance_1d": {
+        "sharpe": 1.2171,
+        "cagr": 0.1571
+      },
+      "rebalance_5d": {
+        "sharpe": 1.3624,
+        "cagr": 0.1784
+      },
+      "rebalance_10d": {
+        "sharpe": 1.4213,
+        "cagr": 0.1892
+      },
+      "rebalance_21d": {
+        "sharpe": 1.4292,
+        "cagr": 0.1925
+      },
+      "top_decile": {
+        "sharpe": 1.2927,
+        "cagr": 0.1734
+      },
+      "top_quintile": {
+        "sharpe": 1.3624,
+        "cagr": 0.1784
+      },
+      "top_third": {
+        "sharpe": 1.3842,
+        "cagr": 0.1831
+      }
+    },
+    "concentration": {
+      "total_return": 4.5732,
+      "top_10_days_contribution": 0.4729,
+      "return_excluding_top_10_days": 2.784,
+      "sharpe_excluding_top_10_days": 0.7521,
+      "distinct_names_held": 98,
+      "mean_positions_per_day": 20.23
+    },
+    "subperiod": {
+      "by_year": {
+        "2014": 0.587,
+        "2015": 0.142,
+        "2016": 0.0699,
+        "2017": 0.2557,
+        "2018": 0.0612,
+        "2019": 0.0491,
+        "2020": 0.3435,
+        "2021": 0.267,
+        "2022": -0.0019,
+        "2023": 0.2422,
+        "2024": 0.1109,
+        "2025": 0.1099,
+        "2026": -0.047
+      },
+      "positive_years": 11,
+      "total_years": 13,
+      "excess_by_year": {
+        "2014": 0.1947,
+        "2015": 0.1826,
+        "2016": 0.0343,
+        "2017": -0.0308,
+        "2018": 0.0346,
+        "2019": -0.0711,
+        "2020": 0.1835,
+        "2021": 0.0258,
+        "2022": -0.0351,
+        "2023": 0.0419,
+        "2024": 0.0406,
+        "2025": 0.0048,
+        "2026": 0.0269
+      },
+      "positive_excess_years": 10,
+      "total_excess_years": 13
+    },
+    "regimes": {
+      "bull": {
+        "days": 1060,
+        "sharpe": 3.0509,
+        "mean_daily": 0.001337,
+        "benchmark_mean_daily": 0.001218
+      },
+      "bear": {
+        "days": 166,
+        "sharpe": -1.807,
+        "mean_daily": -0.002127,
+        "benchmark_mean_daily": -0.00213
+      },
+      "sideways": {
+        "days": 1850,
+        "sharpe": 1.1043,
+        "mean_daily": 0.000508,
+        "benchmark_mean_daily": 0.000328
+      }
+    },
+    "bootstrap": {
+      "point_estimate": 1.2559,
+      "mean": 1.2771,
+      "p05": 0.6836,
+      "p50": 1.2661,
+      "p95": 1.8929,
+      "fraction_above_zero": 1.0,
+      "n_simulations": 2000
+    },
+    "universe_sensitivity": {
+      "method": "Re-run with known Indian corporate failures added to the survivor-only universe. A hand-picked failure set is itself biased, so this bounds the effect rather than removing it.",
+      "added_symbols": 12,
+      "survivor_only": {
+        "sharpe": 0.9238,
+        "cagr": 0.1274
+      },
+      "with_failures": {
+        "sharpe": 1.4622,
+        "cagr": 0.1938
+      },
+      "sharpe_delta": 0.5384,
+      "cagr_delta": 0.0664
+    }
+  },
+  "limitations": [
+    "SURVIVORSHIP BIAS: the universe is a present-day snapshot applied to all dates. Delisted, merged and removed companies are absent. Magnitude unknown; direction NOT reliably conservative.",
+    "Sector labels are current, not point-in-time; reclassified companies carry today's label backwards.",
+    "NOT AVAILABLE \u2014 No intraday feed is available. The vendor serves daily bars only, so no intraday strategy can be researched or validated here.",
+    "NOT AVAILABLE \u2014 No corporate-action dataset with ex-dates, split ratios or dividend amounts is available. Splits and dividends are only implicit in the vendor's adj_close, which is sufficient for computing returns and insufficient for anything that needs the event itself.",
+    "NOT AVAILABLE \u2014 No fundamentals source with PUBLICATION dates is available. Fundamentals indexed by fiscal period end embed look-ahead bias, so value and quality factors cannot be validly researched here.",
+    "12 requested symbols returned no data and are absent from the study (ADANIGAS, ADANITRANS, GRUH, HDFC, HEXAWARE, LTIM, MASTECH, MCDOWELL-N...). Several are renamed or merged tickers, which is direct evidence of the symbol-change gap rather than a transient fetch error.",
+    "UNTESTABLE: value_earnings_yield \u2014 requires point-in-time fundamentals with publication dates; not available",
+    "UNTESTABLE: quality_roe_accruals \u2014 requires point-in-time fundamentals with publication dates; not available",
+    "UNTESTABLE: intraday_reversal \u2014 requires intraday bars; not available"
+  ]
+}

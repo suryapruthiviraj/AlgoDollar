@@ -144,6 +144,21 @@ MAX_ACTIVE_RISK_LIMIT_BREACHES = 0        # any live breach blocks
 MAX_OPEN_RECONCILIATION_BREAKS = 0        # any unexplained position break blocks
 
 
+def _num_or_none(v: Any) -> Optional[float]:
+    """
+    Coerce a JSON value to a finite float, or None.
+
+    None means "not established" and fails every numeric gate. NaN and infinity
+    are treated the same way rather than being passed through — an infinite
+    Sharpe would sail past a minimum-value check.
+    """
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return f if math.isfinite(f) else None
+
+
 def _now() -> datetime:
     """Current UTC time. Indirected so tests can reason about freshness."""
     return datetime.now(timezone.utc)
@@ -1796,6 +1811,57 @@ def gather_repo_evidence() -> Evidence:
     except Exception as exc:  # noqa: BLE001
         notes.append(f"Fundamentals provider could not be inspected: {exc!r}.")
 
+    # ── Research validation ───────────────────────────────────────────────
+    #
+    # Read from the study's own output file rather than restated by hand, so
+    # these numbers cannot drift away from the run that produced them. A
+    # missing or unreadable file leaves every field None, which FAILS the
+    # statistical gates — the correct verdict when no study has been run.
+    study_verdict: Optional[str] = None
+    oos_sharpe_val: Optional[float] = None
+    oos_sharpe_stressed: Optional[float] = None
+    dsr_val: Optional[float] = None
+    trials: Optional[int] = None
+    pbo_val: Optional[float] = None
+    excess_val: Optional[float] = None
+    wf_done: Optional[bool] = None
+    try:
+        from app.research.datasets import DEFAULT_ROOT  # noqa: PLC0415
+
+        study_path = DEFAULT_ROOT / "study_result.json"
+        if study_path.exists():
+            study = json.loads(study_path.read_text())
+            study_verdict = str(study.get("verdict") or "")
+            oos = study.get("out_of_sample") or {}
+            oos_sharpe_val = _num_or_none(oos.get("sharpe"))
+            dsr_val = _num_or_none(oos.get("deflated_sharpe_ratio"))
+            trials = oos.get("n_trials")
+            cs = ((study.get("robustness") or {}).get("cost_sensitivity") or {})
+            stressed = cs.get("50bps") or {}
+            oos_sharpe_stressed = _num_or_none(stressed.get("sharpe"))
+            pbo_val = _num_or_none(oos.get("pbo"))
+            excess_val = _num_or_none(oos.get("excess_cagr"))
+            # The study always runs purged, embargoed walk-forward folds; the
+            # presence of folds is the evidence that it did.
+            wf_done = bool(study.get("folds"))
+            notes.append(
+                f"Research study verdict: {study_verdict} "
+                f"(OOS Sharpe {oos_sharpe_val}, DSR {dsr_val}, {trials} trials)."
+            )
+            if study_verdict != "VALIDATED":
+                notes.append(
+                    "NO VALIDATED STRATEGY: the research study did not reach "
+                    "VALIDATED, so nothing may be promoted to live trading "
+                    "regardless of how any individual gate reads."
+                )
+        else:
+            notes.append(
+                f"No research study result at {study_path}: no strategy has been "
+                f"validated. Run scripts/run_research.py."
+            )
+    except Exception as exc:  # noqa: BLE001
+        notes.append(f"Research study result could not be read: {exc!r}.")
+
     enforced = _enforcement_is_wired()
     if enforced is False:
         notes.append(
@@ -1838,8 +1904,19 @@ def gather_repo_evidence() -> Evidence:
         intraday_history_days=0,
         # Enforcement — observed by reading the order path's source.
         eligibility_enforced_at_order_path=enforced,
-        # Statistical / performance / execution / risk / operational —
-        # unobserved, therefore left as None, therefore failing.
+        # Statistical — read from the study's own output file. Absent a study
+        # these stay None and the statistical gates fail, which is correct.
+        oos_sharpe=oos_sharpe_val,
+        oos_sharpe_at_stressed_costs=oos_sharpe_stressed,
+        deflated_sharpe_ratio=dsr_val,
+        probability_of_backtest_overfitting=pbo_val,
+        n_trials_recorded=trials,
+        purged_walk_forward_completed=wf_done,
+        label_embargo_applied=wf_done,
+        net_annual_excess_return_vs_benchmark=excess_val,
+        benchmark_name="^NSEI" if study_verdict is not None else None,
+        # Performance / execution / risk / operational — unobserved, therefore
+        # left as None, therefore failing.
         trading_mode=trading_mode,
         notes=tuple(notes),
     )

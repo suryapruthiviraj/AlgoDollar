@@ -1,0 +1,1850 @@
+{
+  "generated_utc": "2026-09-04T12:10:37.365556+00:00",
+  "counts": {
+    "symbols": 108,
+    "observations": 362697,
+    "distinct_dates": 3623,
+    "trading_sessions_inferred": 3623,
+    "first_date": "2012-01-02",
+    "last_date": "2026-09-03"
+  },
+  "integrity": {
+    "duplicate_index_rows": 0,
+    "non_monotonic_symbols": [],
+    "non_positive_price_symbols": [],
+    "ohlc_relationship_violations": [],
+    "symbols_missing_adj_close": [],
+    "zero_volume": {
+      "symbols_affected": 108,
+      "worst": [
+        {
+          "symbol": "EMAMILTD",
+          "zero_volume_days": 15
+        },
+        {
+          "symbol": "BRITANNIA",
+          "zero_volume_days": 13
+        },
+        {
+          "symbol": "JSWSTEEL",
+          "zero_volume_days": 13
+        },
+        {
+          "symbol": "IDFCFIRSTB",
+          "zero_volume_days": 11
+        },
+        {
+          "symbol": "ADANIPORTS",
+          "zero_volume_days": 9
+        },
+        {
+          "symbol": "BAJAJ-AUTO",
+          "zero_volume_days": 8
+        },
+        {
+          "symbol": "M&M",
+          "zero_volume_days": 8
+        },
+        {
+          "symbol": "MARUTI",
+          "zero_volume_days": 8
+        },
+        {
+          "symbol": "MOTHERSON",
+          "zero_volume_days": 8
+        },
+        {
+          "symbol": "NAUKRI",
+          "zero_volume_days": 8
+        }
+      ]
+    }
+  },
+  "coverage": {
+    "symbols_with_gaps": 7,
+    "worst_gaps": [
+      {
+        "symbol": "PAGEIND",
+        "missing_sessions": 2,
+        "pct_of_life": 0.055,
+        "examples": [
+          "2026-01-15",
+          "2026-05-01"
+        ]
+      },
+      {
+        "symbol": "AUROPHARMA",
+        "missing_sessions": 1,
+        "pct_of_life": 0.028,
+        "examples": [
+          "2026-01-15"
+        ]
+      },
+      {
+        "symbol": "BALKRISIND",
+        "missing_sessions": 1,
+        "pct_of_life": 0.028,
+        "examples": [
+          "2026-05-01"
+        ]
+      },
+      {
+        "symbol": "BOSCHLTD",
+        "missing_sessions": 1,
+        "pct_of_life": 0.028,
+        "examples": [
+          "2026-05-01"
+        ]
+      },
+      {
+        "symbol": "DIVISLAB",
+        "missing_sessions": 1,
+        "pct_of_life": 0.028,
+        "examples": [
+          "2026-05-01"
+        ]
+      },
+      {
+        "symbol": "POLICYBZR",
+        "missing_sessions": 1,
+        "pct_of_life": 0.084,
+        "examples": [
+          "2026-01-15"
+        ]
+      },
+      {
+        "symbol": "SIEMENS",
+        "missing_sessions": 1,
+        "pct_of_life": 0.028,
+        "examples": [
+          "2026-01-15"
+        ]
+      }
+    ],
+    "benchmark_missing_sessions": 20
+  },
+  "stale_bars": {
+    "definition": "volume == 0 AND open == high == low == close \u2014 the vendor carrying the previous close forward on a non-trading day.",
+    "symbols_affected": 108,
+    "total_bars": 757,
+    "worst": [
+      {
+        "symbol": "EMAMILTD",
+        "stale_bars": 15
+      },
+      {
+        "symbol": "BRITANNIA",
+        "stale_bars": 13
+      },
+      {
+        "symbol": "JSWSTEEL",
+        "stale_bars": 13
+      },
+      {
+        "symbol": "IDFCFIRSTB",
+        "stale_bars": 11
+      },
+      {
+        "symbol": "ADANIPORTS",
+        "stale_bars": 9
+      },
+      {
+        "symbol": "BAJAJ-AUTO",
+        "stale_bars": 8
+      },
+      {
+        "symbol": "M&M",
+        "stale_bars": 8
+      },
+      {
+        "symbol": "MARUTI",
+        "stale_bars": 8
+      },
+      {
+        "symbol": "MOTHERSON",
+        "stale_bars": 8
+      },
+      {
+        "symbol": "NAUKRI",
+        "stale_bars": 8
+      }
+    ],
+    "handling": "MASKED TO NaN by ParquetDailyBars.panel(drop_stale=True), never filled or repaired. Left in, they add returns of exactly zero, which compress volatility and inflate Sharpe."
+  },
+  "adjustment_semantics": {
+    "finding": "The vendor's `close` is ALREADY SPLIT-ADJUSTED; only dividends separate it from `adj_close`. Verified: the close/adj_close ratio starts above 1.0 and converges to exactly 1.0 at the end of every series, and no symbol shows a ~50% single-day move in `close` where a bonus or split is known to have occurred.",
+    "consequence": "NEITHER series is the price actually quoted on a past date. `close` is a split-adjusted reconstruction. A backtest sizing positions in SHARES off `close` therefore computes a share count that never existed, though the resulting RETURN is correct. Rupee-notional sizing is unaffected.",
+    "close_over_adj_close_at_series_start": {
+      "ABB": 1.0768,
+      "ADANIENT": 1.1796,
+      "ADANIGREEN": 1.0,
+      "ADANIPORTS": 1.084,
+      "AMBUJACEM": 1.2421,
+      "APOLLOHOSP": 1.0593,
+      "ASIANPAINT": 1.1378,
+      "AUROPHARMA": 1.088,
+      "AXISBANK": 1.0762,
+      "BAJAJ-AUTO": 1.4517,
+      "BAJAJFINSV": 1.0132,
+      "BAJAJHLDNG": 1.3157,
+      "BAJFINANCE": 1.0764,
+      "BALKRISIND": 1.1244,
+      "BANDHANBNK": 1.0435
+    },
+    "symbols_with_no_adjustment_at_all": [
+      "ADANIGREEN",
+      "CARTRADE",
+      "DMART",
+      "NYKAA",
+      "PAYTM",
+      "POLICYBZR"
+    ]
+  },
+  "corporate_actions": {
+    "separate_dataset_available": false,
+    "detection_method": "Inferred only: a >35% one-day move in RAW close that does NOT appear in adj_close indicates a split or bonus the vendor adjusted for. Ex-dates, ratios and dividend amounts are NOT recoverable this way.",
+    "symbols_with_evidence": 0,
+    "examples": {}
+  },
+  "timestamps": {
+    "timezone": "Bars are tz-NAIVE dates normalised to midnight, representing NSE SESSION DATES (IST). They are not instants and must not be compared against a UTC clock; doing so shifts every Indian session date by up to 5.5 hours.",
+    "any_tz_aware_index": false
+  },
+  "point_in_time_status": {
+    "daily_bars": "POINT-IN-TIME (as traded on the date recorded)",
+    "adj_close": "RECONSTRUCTED \u2014 back-adjusted using corporate actions known TODAY. A 2015 adj_close is not the number an observer saw in 2015. Valid for return computation, invalid as a price level.",
+    "universe": "RECONSTRUCTED \u2014 present-day membership (survivorship bias)",
+    "sectors": "RECONSTRUCTED \u2014 current classification applied to all dates",
+    "benchmark": "POINT-IN-TIME level; adjusted series reconstructed"
+  },
+  "limitations": [
+    "SURVIVORSHIP BIAS: the universe is a present-day snapshot applied to all dates. Delisted, merged and removed companies are absent. Magnitude unknown; direction NOT reliably conservative.",
+    "Sector labels are current, not point-in-time; reclassified companies carry today's label backwards.",
+    "NOT AVAILABLE \u2014 No intraday feed is available. The vendor serves daily bars only, so no intraday strategy can be researched or validated here.",
+    "NOT AVAILABLE \u2014 No corporate-action dataset with ex-dates, split ratios or dividend amounts is available. Splits and dividends are only implicit in the vendor's adj_close, which is sufficient for computing returns and insufficient for anything that needs the event itself.",
+    "NOT AVAILABLE \u2014 No fundamentals source with PUBLICATION dates is available. Fundamentals indexed by fiscal period end embed look-ahead bias, so value and quality factors cannot be validly researched here.",
+    "12 requested symbols returned no data and are absent from the study (ADANIGAS, ADANITRANS, GRUH, HDFC, HEXAWARE, LTIM, MASTECH, MCDOWELL-N...). Several are renamed or merged tickers, which is direct evidence of the symbol-change gap rather than a transient fetch error."
+  ],
+  "per_symbol": {
+    "ABB": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "ADANIENT": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "ADANIGREEN": {
+      "rows": 2032,
+      "first": "2018-06-18",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "ADANIPORTS": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "AMBUJACEM": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "APOLLOHOSP": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "ASIANPAINT": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "AUROPHARMA": {
+      "rows": 3622,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "AXISBANK": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "BAJAJ-AUTO": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "BAJAJFINSV": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "BAJAJHLDNG": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "BAJFINANCE": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "BALKRISIND": {
+      "rows": 3622,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "BANDHANBNK": {
+      "rows": 2088,
+      "first": "2018-03-27",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "BERGEPAINT": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "BHARTIARTL": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "BIOCON": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "BLUESTARCO": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "BOSCHLTD": {
+      "rows": 3622,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "BPCL": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "BRITANNIA": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "CANBK": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "CARTRADE": {
+      "rows": 1250,
+      "first": "2021-08-20",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "CHOLAFIN": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "CIPLA": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "COALINDIA": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "COFORGE": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "COLPAL": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "DABUR": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "DIVISLAB": {
+      "rows": 3622,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "DMART": {
+      "rows": 2341,
+      "first": "2017-03-21",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "DRREDDY": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "EASEMYTRIP": {
+      "rows": 1353,
+      "first": "2021-03-19",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "EICHERMOT": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "EMAMILTD": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "FEDERALBNK": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "GAIL": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "GODREJCP": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "GRASIM": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "HAPPSTMNDS": {
+      "rows": 1479,
+      "first": "2020-09-17",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "HAVELLS": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "HCLTECH": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "HDFCBANK": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "HDFCLIFE": {
+      "rows": 2176,
+      "first": "2017-11-17",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "HEROMOTOCO": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "HINDALCO": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "HINDUNILVR": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "ICICIBANK": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "ICICIGI": {
+      "rows": 2211,
+      "first": "2017-09-27",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "IDFCFIRSTB": {
+      "rows": 2676,
+      "first": "2015-11-06",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "INDUSINDBK": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "INFY": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "IOC": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "IRCTC": {
+      "rows": 1711,
+      "first": "2019-10-14",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "ITC": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "JSWSTEEL": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "JUBLFOOD": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "KOTAKBANK": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "KPITTECH": {
+      "rows": 1827,
+      "first": "2019-04-22",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "LICHSGFIN": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "LT": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "LTTS": {
+      "rows": 2461,
+      "first": "2016-09-23",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "LUPIN": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "M&M": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "MANAPPURAM": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "MARICO": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "MARUTI": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "MOTHERSON": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "MPHASIS": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "MUTHOOTFIN": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "NAUKRI": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "NESTLEIND": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "NHPC": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "NTPC": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "NYKAA": {
+      "rows": 1195,
+      "first": "2021-11-10",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "ONGC": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "PAGEIND": {
+      "rows": 3621,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "PAYTM": {
+      "rows": 1189,
+      "first": "2021-11-18",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "PERSISTENT": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "PFC": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "PIDILITIND": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "PNB": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "POLICYBZR": {
+      "rows": 1191,
+      "first": "2021-11-15",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "POWERGRID": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "RECLTD": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "RELIANCE": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "SBILIFE": {
+      "rows": 2208,
+      "first": "2017-10-03",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "SBIN": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "SHREECEM": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "SIEMENS": {
+      "rows": 3622,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "SRF": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "SUNPHARMA": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "TATACONSUM": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "TATAELXSI": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "TATAINVEST": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "TATAPOWER": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "TATASTEEL": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "TCS": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "TECHM": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "TITAN": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "TORNTPHARM": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "TVSMOTOR": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "ULTRACEMCO": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "UPL": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "VOLTAS": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "WHIRLPOOL": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    },
+    "WIPRO": {
+      "rows": 3623,
+      "first": "2012-01-02",
+      "last": "2026-09-03",
+      "duplicate_index_rows": 0,
+      "columns": [
+        "adj_close",
+        "close",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "tz_aware": false
+    }
+  }
+}
