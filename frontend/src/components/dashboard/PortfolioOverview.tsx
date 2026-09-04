@@ -9,7 +9,9 @@ export function PortfolioOverview() {
 
   const liveValue = currentValue ?? overview?.currentValue;
   const livePnl = todayPnl ?? overview?.todayPnl;
-  const livePct = todayPnlPct ?? overview?.todayPnlPct;
+  const livePct = todayPnlPct ?? (overview && overview.currentValue
+    ? (overview.todayPnl / overview.currentValue) * 100
+    : undefined);
 
   return (
     <div className="space-y-3">
@@ -24,14 +26,14 @@ export function PortfolioOverview() {
         />
         <MetricCard
           title="Invested"
-          value={overview?.investedCapital}
+          value={overview?.invested}
           format="currency"
           subtitle="Market value of positions"
           loading={isLoading}
         />
         <MetricCard
           title="Cash Balance"
-          value={overview?.cashBalance}
+          value={overview?.cash}
           format="currency"
           subtitle="Available to deploy"
           loading={isLoading}
@@ -40,8 +42,8 @@ export function PortfolioOverview() {
           title="Current Value"
           value={liveValue}
           format="currency"
-          change={liveValue && overview?.investedCapital
-            ? liveValue - overview.investedCapital
+          change={liveValue && overview?.invested
+            ? liveValue - overview.invested
             : undefined}
           subtitle="Live market value"
           loading={isLoading}
@@ -60,7 +62,9 @@ export function PortfolioOverview() {
         <MetricCard
           title="Monthly P&L"
           value={overview?.monthlyPnl}
-          changePct={overview?.monthlyPnlPct}
+          changePct={overview && overview.currentValue
+            ? (overview.monthlyPnl / overview.currentValue) * 100
+            : undefined}
           format="currency"
           loading={isLoading}
         />
@@ -72,7 +76,7 @@ export function PortfolioOverview() {
         />
         <MetricCard
           title="Max Drawdown"
-          value={overview?.maxDrawdown}
+          value={overview?.drawdownPct}
           format="percent"
           invertColors
           loading={isLoading}
@@ -83,32 +87,29 @@ export function PortfolioOverview() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <MetricCard
           title="Sharpe Ratio"
-          value={overview?.sharpeRatio}
+          value={overview?.sharpe}
           format="number"
           subtitle="Risk-adjusted return"
           loading={isLoading}
         />
         <MetricCard
           title="Sortino Ratio"
-          value={overview?.sortinoRatio}
+          value={overview?.sortino}
           format="number"
           subtitle="Downside risk-adjusted"
           loading={isLoading}
         />
         <MetricCard
           title="Portfolio Vol"
-          value={overview?.portfolioVol}
+          value={overview?.volatility}
           format="percent"
           subtitle="Annualised"
           loading={isLoading}
         />
-        <MetricCard
-          title="Beta"
-          value={overview?.beta}
-          format="number"
-          subtitle="vs NIFTY 50"
-          loading={isLoading}
-        />
+        {/* Beta is NOT reported by the backend — computing it needs a
+            regression against the index, which nothing here does. The card is
+            removed rather than bound to a field that does not exist and would
+            render as a confident 0.00. */}
       </div>
     </div>
   );

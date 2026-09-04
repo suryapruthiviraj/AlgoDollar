@@ -7,25 +7,37 @@ export interface ApiResponse<T> {
 }
 
 // ─── Portfolio ────────────────────────────────────────────────────────────────
+/**
+ * Mirrors `PortfolioOverview` in backend/app/api/routes/portfolio.py.
+ *
+ * This type was ASPIRATIONAL: it declared fields the endpoint has never
+ * returned (`investedCapital`, `cashBalance`, `maxDrawdown`, `sharpeRatio`,
+ * `portfolioVol`, `beta`, `weeklyPnl`, `lastUpdated`) and omitted several it
+ * does. Because the API client was also unwrapping the wrong shape, every
+ * field was undefined at runtime and components silently fell back to
+ * hardcoded placeholders — which is a large part of why the dashboard looked
+ * like a mock.
+ *
+ * Field names here are the camelCase form of the backend's snake_case, which
+ * the API client converts in exactly one place.
+ *
+ * `beta` is deliberately absent: the backend does not compute it, and
+ * declaring it would invite another invented fallback.
+ */
 export interface PortfolioOverview {
   totalCapital: number;
-  investedCapital: number;
-  cashBalance: number;
+  invested: number;
+  cash: number;
   currentValue: number;
+  unrealizedPnl: number;
+  realizedPnl: number;
   todayPnl: number;
-  todayPnlPct: number;
-  weeklyPnl: number;
-  weeklyPnlPct: number;
   monthlyPnl: number;
-  monthlyPnlPct: number;
-  totalReturn: number;
   totalReturnPct: number;
-  maxDrawdown: number;
-  sharpeRatio: number;
-  sortinoRatio: number;
-  portfolioVol: number;
-  beta: number;
-  lastUpdated: string;
+  drawdownPct: number;
+  volatility: number;
+  sharpe: number;
+  sortino: number;
 }
 
 export interface Position {
@@ -215,20 +227,54 @@ export interface MarketOverview {
 }
 
 // ─── Risk ─────────────────────────────────────────────────────────────────────
+/**
+ * Mirrors `RiskStateResponse` in backend/app/api/routes/risk.py.
+ *
+ * The previous shape declared VaR, CVaR, weekly and monthly loss figures that
+ * the backend has never computed. Bound to `?? 0`, they rendered as a
+ * comfortable zero — a risk page reporting 0% drawdown because nothing was
+ * measured looks exactly like safety, which is the most dangerous thing such a
+ * page can do.
+ *
+ * Anything the backend cannot measure is `null` here, and `unavailable` says
+ * why.
+ */
 export interface RiskState {
-  portfolioDrawdown: number;
-  maxAllowedDrawdown: number;
-  dailyLoss: number;
-  maxDailyLoss: number;
-  weeklyLoss: number;
-  maxWeeklyLoss: number;
-  monthlyLoss: number;
-  maxMonthlyLoss: number;
-  activeBreach: RiskBreach[];
+  tradingMode: string;
+  tradingPermitted: boolean;
   killSwitchActive: boolean;
-  var95: number;
-  cvar95: number;
-  concentrationRisk: number;
+  killSwitchReason: string | null;
+  reconciliationState: string | null;
+
+  portfolioValue: number | null;
+  cash: number | null;
+  invested: number | null;
+  openPositions: number;
+
+  currentDrawdownPct: number | null;
+  realizedPnl: number | null;
+
+  largestPositionPct: number | null;
+  largestPositionSymbol: string | null;
+  sectorExposures: Record<string, number>;
+
+  limits: LimitStatus[];
+  activeBreaches: string[];
+  /** Reasons a field above is null. Never rendered as zero. */
+  unavailable: string[];
+}
+
+/** One configured limit and how close the book is to it. */
+export interface LimitStatus {
+  name: string;
+  label: string;
+  limit: number;
+  current: number | null;
+  utilisation: number | null;
+  breached: boolean;
+  /** False means there is no current reading — NOT that utilisation is zero. */
+  measurable: boolean;
+  detail: string;
 }
 
 export interface RiskBreach {
@@ -239,6 +285,20 @@ export interface RiskBreach {
   resolvedAt?: string;
 }
 
+/**
+ * Mirrors `LimitsResponse` in backend/app/api/routes/risk.py.
+ *
+ * Named separately from `RiskLimits` on purpose: that one is the USER-EDITABLE
+ * settings shape (what the operator configures), while this is the SERVER'S
+ * view of those limits and how close the book is to each. Giving both the same
+ * name conflated a form with a measurement.
+ */
+export interface RiskLimitsResponse {
+  limits: LimitStatus[];
+  source: string;
+}
+
+/** The operator-editable limit settings, as persisted in UserSettings. */
 export interface RiskLimits {
   maxPortfolioDrawdown: number;
   maxDailyLoss: number;

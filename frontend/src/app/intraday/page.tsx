@@ -93,9 +93,14 @@ export default function IntradayPage() {
   const wins = todayTrades.filter((t) => t.outcome === 'WIN').length;
   const winRate = todayTrades.length > 0 ? (wins / todayTrades.length) * 100 : 0;
 
-  const dailyLoss = Math.abs(riskState?.dailyLoss ?? 0);
-  const maxDailyLoss = Math.abs(riskState?.maxDailyLoss ?? 5000);
-  const dailyUsedPct = maxDailyLoss > 0 ? (dailyLoss / maxDailyLoss) * 100 : 0;
+  // From the backend's limit table rather than from fields it never sent.
+  // `?? 0` against `?? 5000` drew a comfortable empty bar whenever the daily
+  // loss was not measured — which was always.
+  const dailyLimit = riskState?.limits?.find((l) => l.name === 'max_daily_loss_pct');
+  const dailyLoss = dailyLimit?.current != null ? Math.abs(dailyLimit.current) : null;
+  const maxDailyLoss = dailyLimit ? Math.abs(dailyLimit.limit) : null;
+  const dailyUsedPct =
+    dailyLoss != null && maxDailyLoss ? (dailyLoss / maxDailyLoss) * 100 : null;
 
   return (
     <div className="flex flex-col h-full">
@@ -119,17 +124,26 @@ export default function IntradayPage() {
           <div className="bg-surface border border-border rounded-lg p-4 col-span-2">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold text-text-primary">Daily Risk Meter</h3>
-              <span className={clsx('text-xs font-mono', dailyUsedPct >= 85 ? 'text-loss' : dailyUsedPct >= 60 ? 'text-warning' : 'text-muted')}>
-                {formatINR(dailyLoss)} / {formatINR(maxDailyLoss)}
+              <span className={clsx('text-xs font-mono', dailyUsedPct == null ? 'text-muted' : dailyUsedPct >= 85 ? 'text-loss' : dailyUsedPct >= 60 ? 'text-warning' : 'text-muted')}>
+                {dailyLoss != null && maxDailyLoss != null
+                  ? `${formatINR(dailyLoss)} / ${formatINR(maxDailyLoss)}`
+                  : 'not measured'}
               </span>
             </div>
             <div className="progress-bar mb-2">
+              {/* No bar at all when the loss is not measured. A zero-width bar
+                  against a limit reads as "well within budget", which is a
+                  claim nothing has established. */}
               <div
-                className={clsx('progress-bar-fill h-3', dailyUsedPct >= 85 ? 'bg-loss' : dailyUsedPct >= 60 ? 'bg-warning' : 'bg-accent')}
-                style={{ width: `${Math.min(dailyUsedPct, 100)}%` }}
+                className={clsx('progress-bar-fill h-3', dailyUsedPct == null ? 'bg-border' : dailyUsedPct >= 85 ? 'bg-loss' : dailyUsedPct >= 60 ? 'bg-warning' : 'bg-accent')}
+                style={{ width: dailyUsedPct == null ? '0%' : `${Math.min(dailyUsedPct, 100)}%` }}
               />
             </div>
-            <p className="text-xs text-muted">{dailyUsedPct.toFixed(1)}% of daily loss limit used</p>
+            <p className="text-xs text-muted">
+              {dailyUsedPct != null
+                ? `${dailyUsedPct.toFixed(1)}% of daily loss limit used`
+                : 'Daily loss is not measured: it needs an intraday P&L series, which is not yet persisted.'}
+            </p>
           </div>
 
           {/* Market Regime */}

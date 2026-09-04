@@ -16,15 +16,13 @@ function formatINR(value: number): string {
 
 interface PnLRowProps {
   label: string;
-  gross: number;
-  net: number;
-  grossPct?: number;
-  sparkline?: number[];
+  /** Undefined means the backend did not report it — rendered as "—", not 0. */
+  net: number | undefined;
 }
 
-function PnLRow({ label, gross, net, grossPct, sparkline }: PnLRowProps) {
-  const isPositive = net >= 0;
-  const sparkData = sparkline?.map((v) => ({ v })) ?? [];
+function PnLRow({ label, net }: PnLRowProps) {
+  const known = typeof net === 'number' && Number.isFinite(net);
+  const isPositive = known && (net as number) >= 0;
 
   return (
     <div className="flex items-center gap-4 py-3 border-b border-border last:border-b-0">
@@ -40,52 +38,25 @@ function PnLRow({ label, gross, net, grossPct, sparkline }: PnLRowProps) {
               isPositive ? 'text-profit' : 'text-loss',
             )}
           >
-            {isPositive ? '+' : ''}{formatINR(net)}
+            {!known ? '—' : `${isPositive ? '+' : ''}${formatINR(net as number)}`}
           </span>
-          {grossPct !== undefined && (
-            <span className={clsx('text-2xs font-mono', isPositive ? 'text-profit' : 'text-loss')}>
-              ({grossPct >= 0 ? '+' : ''}{grossPct.toFixed(2)}%)
+          {!known && (
+            <span className="text-2xs text-muted">
+              not reported
             </span>
           )}
         </div>
-        <div className="flex gap-3 text-2xs text-muted mt-0.5">
-          <span>Gross: {formatINR(gross)}</span>
-          <span>Net: {formatINR(net)}</span>
-          {gross !== 0 && (
-            <span>Costs: {formatINR(gross - net)}</span>
-          )}
-        </div>
+        {/* The Gross / Costs sub-line is gone: gross was net inflated by an
+            assumed 0.05%, so "Costs" was that assumption displayed as a
+            measurement. */}
       </div>
 
-      {sparkline && sparkline.length > 0 && (
-        <div className="w-16 h-8 shrink-0">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={sparkData}>
-              <Line
-                type="monotone"
-                dataKey="v"
-                stroke={isPositive ? '#22c55e' : '#ef4444'}
-                strokeWidth={1.5}
-                dot={false}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      )}
     </div>
   );
 }
 
-// Mock sparkline generator
-function mockSparkline(trend: 'up' | 'down'): number[] {
-  const points: number[] = [];
-  let v = 100;
-  for (let i = 0; i < 20; i++) {
-    v += (Math.random() - (trend === 'up' ? 0.4 : 0.6)) * 5;
-    points.push(v);
-  }
-  return points;
-}
+// REMOVED: mockSparkline(), which drew a random walk shaped to match whichever
+// direction the P&L happened to be. It made a made-up trend look like history.
 
 export function PnLCard() {
   const { overview, isLoading } = usePortfolio();
@@ -101,47 +72,30 @@ export function PnLCard() {
     );
   }
 
-  const today = overview?.todayPnl ?? 0;
-  const monthly = overview?.monthlyPnl ?? 0;
-  const weekly = overview?.weeklyPnl ?? 0;
-  const total = overview?.totalReturn ?? 0;
-
-  // Estimate gross (adding back ~0.05% costs)
-  const totalCapital = overview?.totalCapital ?? 1000000;
-  const costFactor = 0.0005;
+  // Only what the backend actually reports. The endpoint returns today_pnl,
+  // monthly_pnl, unrealized_pnl, realized_pnl and total_return_pct — there is
+  // no weekly figure, so none is shown.
+  const today = overview?.todayPnl;
+  const monthly = overview?.monthlyPnl;
+  const realized = overview?.realizedPnl;
+  const unrealized = overview?.unrealizedPnl;
 
   return (
     <div className="bg-surface border border-border rounded-lg p-4">
       <h3 className="text-sm font-semibold text-text-primary mb-1">P&L Breakdown</h3>
-      <p className="text-2xs text-muted mb-3">Gross and net after transaction costs</p>
+      {/*
+        The GROSS column is gone. It was computed as `net * 1.0005` — net
+        inflated by an assumed 0.05% cost, presented next to the real net figure
+        as though both had been measured. Costs ARE recorded per fill and are
+        available on the trades endpoint; when they are aggregated here the
+        column can come back as a measurement.
+      */}
+      <p className="text-2xs text-muted mb-3">Net, after transaction costs</p>
 
-      <PnLRow
-        label="Today"
-        gross={today * (1 + costFactor)}
-        net={today}
-        grossPct={overview?.todayPnlPct}
-        sparkline={mockSparkline(today >= 0 ? 'up' : 'down')}
-      />
-      <PnLRow
-        label="This Week"
-        gross={weekly * (1 + costFactor)}
-        net={weekly}
-        grossPct={overview?.weeklyPnlPct}
-        sparkline={mockSparkline(weekly >= 0 ? 'up' : 'down')}
-      />
-      <PnLRow
-        label="This Month"
-        gross={monthly * (1 + costFactor)}
-        net={monthly}
-        grossPct={overview?.monthlyPnlPct}
-        sparkline={mockSparkline(monthly >= 0 ? 'up' : 'down')}
-      />
-      <PnLRow
-        label="All Time"
-        gross={total + totalCapital * 0.005}
-        net={total}
-        grossPct={overview?.totalReturnPct}
-      />
+      <PnLRow label="Today" net={today} />
+      <PnLRow label="This Month" net={monthly} />
+      <PnLRow label="Realised" net={realized} />
+      <PnLRow label="Unrealised" net={unrealized} />
     </div>
   );
 }

@@ -7,6 +7,7 @@ import { EquityCurve } from '@/components/charts/EquityCurve';
 import { PnLCard } from '@/components/dashboard/PnLCard';
 import { AllocationPie } from '@/components/charts/AllocationPie';
 import { TradingModeBanner } from '@/components/common/TradingModeBanner';
+import { ExecutionDecisions } from '@/components/dashboard/ExecutionDecisions';
 
 export const metadata: Metadata = {
   title: 'Dashboard',
@@ -30,6 +31,13 @@ export default function DashboardPage() {
         <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <AllocationCard />
           <RiskCard />
+        </section>
+
+        {/* Execution decisions.
+            Placed above the charts on purpose: when nothing is trading, the
+            first question is WHY, and an empty P&L chart cannot answer it. */}
+        <section>
+          <ExecutionDecisions />
         </section>
 
         {/* Equity Curve */}

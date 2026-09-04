@@ -90,7 +90,13 @@ export function Header({ title }: HeaderProps) {
   const unread = notifications?.filter((n) => !n.read).length ?? 0;
 
   const displayPnl = todayPnl ?? overview?.todayPnl ?? 0;
-  const displayPct = todayPnlPct ?? overview?.todayPnlPct ?? 0;
+  // Derived, because the backend reports today's P&L in rupees only. Reading
+  // a `todayPnlPct` field that does not exist gave a confident 0.00%.
+  const displayPct =
+    todayPnlPct ??
+    (overview && overview.currentValue
+      ? (overview.todayPnl / overview.currentValue) * 100
+      : 0);
   const totalValue = overview?.currentValue ?? 0;
 
   return (

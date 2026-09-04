@@ -81,7 +81,9 @@ export function RiskCard() {
     retry: false,
   });
 
-  const activeBreaches = riskState?.activeBreach ?? [];
+  // Plain strings from the backend: each names one condition currently
+  // blocking trading. They carried a `severity` field the API never sent.
+  const activeBreaches = riskState?.activeBreaches ?? [];
   const hasBreaches = activeBreaches.length > 0;
 
   return (
@@ -112,48 +114,43 @@ export function RiskCard() {
               {activeBreaches.map((breach, i) => (
                 <div
                   key={i}
-                  className={clsx(
-                    'flex items-start gap-2 p-2.5 rounded text-xs border',
-                    breach.severity === 'CRITICAL'
-                      ? 'bg-loss/15 border-loss/30 text-loss'
-                      : breach.severity === 'HIGH'
-                      ? 'bg-loss/10 border-loss/20 text-loss'
-                      : 'bg-warning/10 border-warning/20 text-warning',
-                  )}
+                  className="flex items-start gap-2 p-2.5 rounded text-xs border bg-loss/15 border-loss/30 text-loss"
                 >
                   <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                  <span>{breach.message}</span>
+                  <span>{breach}</span>
                 </div>
               ))}
             </div>
           )}
 
-          {/* Progress bars */}
+          {/* Limits, from the backend's own table.
+              The three bars here previously read fields the API never sent
+              (`dailyLoss`, `maxAllowedDrawdown`, `monthlyLoss`) with invented
+              fallbacks — `?? 0` used against `?? 15`, which drew an empty,
+              reassuring bar whenever nothing was measured. A limit with no
+              current reading now says so instead. */}
           <div className="space-y-3">
-            <ProgressBar
-              label="Portfolio Drawdown"
-              used={Math.abs(riskState?.portfolioDrawdown ?? 0)}
-              max={Math.abs(riskState?.maxAllowedDrawdown ?? 15)}
-              format="percent"
-              warningAt={0.7}
-              dangerAt={0.9}
-            />
-            <ProgressBar
-              label="Daily Loss Limit"
-              used={Math.abs(riskState?.dailyLoss ?? 0)}
-              max={Math.abs(riskState?.maxDailyLoss ?? 5000)}
-              format="currency"
-              warningAt={0.6}
-              dangerAt={0.85}
-            />
-            <ProgressBar
-              label="Monthly Loss Limit"
-              used={Math.abs(riskState?.monthlyLoss ?? 0)}
-              max={Math.abs(riskState?.maxMonthlyLoss ?? 20000)}
-              format="currency"
-              warningAt={0.6}
-              dangerAt={0.85}
-            />
+            {(riskState?.limits ?? []).slice(0, 4).map((l) =>
+              l.measurable && l.current != null ? (
+                <ProgressBar
+                  key={l.name}
+                  label={l.label}
+                  used={Math.abs(l.current)}
+                  max={Math.abs(l.limit)}
+                  format={l.name.includes('pct') ? 'percent' : undefined}
+                  warningAt={0.7}
+                  dangerAt={0.9}
+                />
+              ) : (
+                <div key={l.name} className="flex justify-between text-xs">
+                  <span className="text-muted">{l.label}</span>
+                  <span className="text-muted">not measured</span>
+                </div>
+              ),
+            )}
+            {!riskState?.limits?.length && (
+              <p className="text-xs text-muted">Risk limits could not be read.</p>
+            )}
           </div>
 
           {/* Strategy Health */}

@@ -70,34 +70,13 @@ function normalizeEquityCurve(data: EquityCurvePoint[]): EquityCurvePoint[] {
   }));
 }
 
-// Generate mock equity curve for display when API is not available
-function generateMockCurve(period: Period): EquityCurvePoint[] {
-  const days =
-    period === '1W' ? 7
-    : period === '1M' ? 30
-    : period === '3M' ? 90
-    : period === '6M' ? 180
-    : period === '1Y' ? 365
-    : 1000;
-
-  const points: EquityCurvePoint[] = [];
-  let portfolio = 100000;
-  let nifty = 100000;
-  const now = new Date();
-
-  for (let i = days; i >= 0; i--) {
-    const date = new Date(now);
-    date.setDate(date.getDate() - i);
-    portfolio *= 1 + (Math.random() - 0.47) * 0.015;
-    nifty *= 1 + (Math.random() - 0.49) * 0.01;
-    points.push({
-      date: date.toISOString().split('T')[0],
-      portfolio,
-      nifty,
-    });
-  }
-  return points;
-}
+// REMOVED: generateMockCurve(), which built an equity curve from Math.random()
+// and was rendered instead of the real series — the API response was fetched
+// and then explicitly discarded with `void fetchedData`.
+//
+// A random walk drawn as this account's performance is fabricated financial
+// data. When there is no history the chart now says so; an empty panel is
+// honest and a plausible rising line is not.
 
 interface EquityCurveProps {
   showBuyHold?: boolean;
@@ -118,8 +97,7 @@ export function EquityCurve({ showBuyHold = false, data: externalData }: EquityC
     enabled: !externalData,
   });
 
-  void fetchedData; // used by API, we use mock for now
-  const rawData = externalData ?? generateMockCurve(period);
+  const rawData = externalData ?? fetchedData ?? [];
   const chartData = normalizeEquityCurve(rawData);
 
   const formatDate = (dateStr: string) => {

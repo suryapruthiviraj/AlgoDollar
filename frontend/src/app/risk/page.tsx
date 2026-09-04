@@ -37,14 +37,14 @@ function computeSectorConcentration(positions: Position[]) {
   }));
 }
 
-// Mock correlation matrix (in reality would come from API)
-const MOCK_CORRELATION = [
-  { pair: 'RELIANCE-ONGC', correlation: 0.82 },
-  { pair: 'HDFC-ICICI', correlation: 0.78 },
-  { pair: 'TCS-INFY', correlation: 0.91 },
-  { pair: 'BHARTI-VODAIDEA', correlation: 0.65 },
-  { pair: 'MARUTI-M&M', correlation: 0.73 },
-];
+// REMOVED: MOCK_CORRELATION, five hardcoded pairs (TCS-INFY at 0.91 and so on)
+// captioned "based on 90-day rolling window" — a caption describing a
+// calculation that never ran. The pairs were not even drawn from the current
+// book, so the panel showed correlations for names the account may not hold.
+//
+// The allocation engine DOES compute a real correlation matrix from price
+// history (app/engine/allocated_cycle.estimate_risk_inputs), but it is not yet
+// exposed through the API, so the panel states that rather than inventing one.
 
 const SECTOR_COLORS = ['#3b82f6', '#22c55e', '#8b5cf6', '#f59e0b', '#06b6d4', '#ec4899', '#84cc16', '#f97316'];
 
@@ -103,104 +103,142 @@ export default function RiskPage() {
   // panel that says why is honest, a plausible-looking chart is not. Restore
   // the panel when the backend can supply measured values.
 
-  const activeBreaches = riskState?.activeBreach ?? [];
+  const activeBreaches = riskState?.activeBreaches ?? [];
+  const unavailable = riskState?.unavailable ?? [];
 
   return (
     <div className="flex flex-col h-full">
       <Header title="Risk Management" />
 
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
-        {/* Risk State Overview */}
+        {/* Trading status — the first thing to know is whether it CAN trade. */}
         <section className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <MetricCard
-            title="Portfolio Drawdown"
-            value={riskState?.portfolioDrawdown ?? null}
-            format="percent"
-            invertColors
-          />
-          <MetricCard
-            title="VaR 95%"
-            value={riskState?.var95 ?? null}
+            title="Portfolio Value"
+            value={riskState?.portfolioValue ?? null}
             format="currency"
-            invertColors
-            subtitle="1-day"
           />
           <MetricCard
-            title="CVaR 95%"
-            value={riskState?.cvar95 ?? null}
+            title="Cash"
+            value={riskState?.cash ?? null}
             format="currency"
-            invertColors
-            subtitle="Expected shortfall"
+            subtitle="Uninvested"
           />
           <MetricCard
-            title="Concentration"
-            value={riskState?.concentrationRisk ?? null}
+            title="Largest Position"
+            value={
+              riskState?.largestPositionPct != null
+                ? riskState.largestPositionPct * 100
+                : null
+            }
             format="percent"
-            subtitle="Top position weight"
+            subtitle={riskState?.largestPositionSymbol ?? 'no positions'}
+          />
+          <MetricCard
+            title="Open Positions"
+            value={riskState?.openPositions ?? null}
+            format="number"
           />
         </section>
 
-        {/* Active Breaches */}
+        {/* Blocking conditions. Listed in full rather than summarised: an
+            operator needs everything that is stopping trading, not the first
+            thing the code happened to check. */}
         {activeBreaches.length > 0 && (
           <section className="bg-loss/10 border border-loss/30 rounded-lg p-4">
             <h3 className="text-sm font-semibold text-loss flex items-center gap-2 mb-3">
               <AlertTriangle className="w-4 h-4" />
-              Active Risk Limit Breaches ({activeBreaches.length})
+              Trading is blocked ({activeBreaches.length})
             </h3>
-            <div className="space-y-2">
-              {activeBreaches.map((breach, i) => (
-                <div key={i} className="flex items-start gap-3 text-sm">
-                  <span className={clsx(
-                    'text-xs px-1.5 py-0.5 rounded font-semibold shrink-0',
-                    breach.severity === 'CRITICAL' ? 'bg-loss text-white' : 'bg-warning/20 text-warning',
-                  )}>
-                    {breach.severity}
-                  </span>
-                  <span className="text-text-secondary">{breach.message}</span>
-                  <span className="text-muted text-xs shrink-0 ml-auto">
-                    {new Date(breach.triggeredAt).toLocaleTimeString('en-IN')}
-                  </span>
-                </div>
+            <ul className="space-y-1.5">
+              {activeBreaches.map((b, i) => (
+                <li key={i} className="text-sm text-text-secondary">
+                  {b}
+                </li>
               ))}
-            </div>
+            </ul>
           </section>
         )}
 
-        {/* Risk Limits Reference */}
+        {riskState && (
+          <section className="bg-surface border border-border rounded-lg p-4 text-xs flex flex-wrap gap-x-6 gap-y-2">
+            <span className="text-muted">
+              Mode <span className="text-text-primary">{riskState.tradingMode}</span>
+            </span>
+            <span className="text-muted">
+              Trading{' '}
+              <span className={riskState.tradingPermitted ? 'text-profit' : 'text-loss'}>
+                {riskState.tradingPermitted ? 'permitted' : 'blocked'}
+              </span>
+            </span>
+            <span className="text-muted">
+              Kill switch{' '}
+              <span className={riskState.killSwitchActive ? 'text-loss' : 'text-profit'}>
+                {riskState.killSwitchActive ? 'ENGAGED' : 'clear'}
+              </span>
+            </span>
+            {riskState.reconciliationState && (
+              <span className="text-muted">
+                Reconciliation{' '}
+                <span className="text-text-primary">{riskState.reconciliationState}</span>
+              </span>
+            )}
+          </section>
+        )}
+
+        {/* Limits. A limit with no current reading is shown as unmeasured
+            rather than as a comfortable empty bar. */}
         <section className="bg-surface border border-border rounded-lg p-4">
           <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2 mb-4">
             <Shield className="w-4 h-4 text-accent" />
-            Risk Limits Configuration
+            Risk limits
           </h3>
-          {riskLimits ? (
+          {riskState?.limits?.length ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
-              {[
-                { label: 'Max Portfolio Drawdown', value: `${riskLimits.maxPortfolioDrawdown}%`, used: Math.abs(riskState?.portfolioDrawdown ?? 0), max: riskLimits.maxPortfolioDrawdown },
-                { label: 'Max Daily Loss', value: formatINR(riskLimits.maxDailyLoss), used: Math.abs(riskState?.dailyLoss ?? 0), max: riskLimits.maxDailyLoss },
-                { label: 'Max Weekly Loss', value: formatINR(riskLimits.maxWeeklyLoss), used: Math.abs(riskState?.weeklyLoss ?? 0), max: riskLimits.maxWeeklyLoss },
-                { label: 'Max Position Size', value: `${riskLimits.maxPositionSize}%`, used: 0, max: 1 },
-                { label: 'Max Sector Conc.', value: `${riskLimits.maxSectorConcentration}%`, used: 0, max: 1 },
-                { label: 'Max Correlation', value: riskLimits.maxCorrelation.toFixed(2), used: 0, max: 1 },
-              ].map(({ label, value, used, max }) => {
-                const pct = max > 0 ? Math.min((used / max) * 100, 100) : 0;
+              {riskState.limits.map((l) => {
+                const pct = l.utilisation != null ? Math.min(l.utilisation * 100, 100) : 0;
                 return (
-                  <div key={label} className="bg-surface-2 rounded p-3">
-                    <p className="text-muted mb-1">{label}</p>
-                    <p className="text-sm font-mono font-semibold text-text-primary mb-2">{value}</p>
-                    <div className="progress-bar">
-                      <div
-                        className={clsx('progress-bar-fill', pct >= 90 ? 'bg-loss' : pct >= 70 ? 'bg-warning' : 'bg-accent')}
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
+                  <div key={l.name} className="bg-surface-2 rounded p-3">
+                    <p className="text-muted mb-1">{l.label}</p>
+                    <p className="text-sm font-mono font-semibold text-text-primary mb-2">
+                      {l.current != null
+                        ? `${l.current.toFixed(2)} / ${l.limit}`
+                        : `— / ${l.limit}`}
+                    </p>
+                    {l.measurable ? (
+                      <div className="progress-bar">
+                        <div
+                          className={clsx(
+                            'progress-bar-fill',
+                            l.breached ? 'bg-loss' : pct >= 70 ? 'bg-warning' : 'bg-accent',
+                          )}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                    ) : (
+                      <p className="text-2xs text-muted">{l.detail || 'not measurable'}</p>
+                    )}
                   </div>
                 );
               })}
             </div>
           ) : (
-            <div className="text-sm text-muted">Loading risk limits...</div>
+            <p className="text-sm text-muted">Risk limits could not be read.</p>
           )}
         </section>
+
+        {unavailable.length > 0 && (
+          <section className="bg-surface border border-border rounded-lg p-4">
+            <h3 className="text-sm font-semibold text-text-primary mb-2">
+              Not measurable right now
+            </h3>
+            <ul className="space-y-1 text-xs text-muted">
+              {unavailable.map((u, i) => (
+                <li key={i}>{u}</li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         {/* Risk Contribution + Sector Concentration */}
         <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -253,12 +291,14 @@ export default function RiskPage() {
         {/* Correlation Matrix */}
         <section className="bg-surface border border-border rounded-lg p-4">
           <h3 className="text-sm font-semibold text-text-primary mb-4">Top Position Correlations</h3>
-          <div className="space-y-0">
-            {MOCK_CORRELATION.map((c) => (
-              <CorrelationRow key={c.pair} pair={c.pair} value={c.correlation} />
-            ))}
+          <div className="py-6 text-center">
+            <p className="text-sm text-muted">Not available</p>
+            <p className="text-xs text-muted mt-1 max-w-md mx-auto">
+              Pairwise correlations are computed by the allocation engine from
+              63 sessions of price history, but are not yet exposed through the
+              API. The figures previously shown here were hardcoded.
+            </p>
           </div>
-          <p className="text-2xs text-muted mt-3">Correlations based on 90-day rolling window. Values above 0.7 flagged as high.</p>
         </section>
       </div>
     </div>

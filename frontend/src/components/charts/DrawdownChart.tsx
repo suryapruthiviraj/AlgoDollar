@@ -30,33 +30,17 @@ function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
   );
 }
 
-function generateMockDrawdown(): DrawdownPoint[] {
-  const points: DrawdownPoint[] = [];
-  let portfolioValue = 100000;
-  let peak = portfolioValue;
-  const now = new Date();
-
-  for (let i = 365; i >= 0; i--) {
-    const date = new Date(now);
-    date.setDate(date.getDate() - i);
-    portfolioValue *= 1 + (Math.random() - 0.49) * 0.012;
-    peak = Math.max(peak, portfolioValue);
-    const drawdown = ((portfolioValue - peak) / peak) * 100;
-    points.push({
-      date: date.toISOString().split('T')[0],
-      drawdown,
-      portfolioValue,
-    });
-  }
-  return points;
-}
+// REMOVED: generateMockDrawdown(), which produced a drawdown series from
+// Math.random(). A fabricated drawdown chart is worse than none: drawdown is
+// the number a person checks before deciding whether the system is safe to
+// keep running.
 
 interface DrawdownChartProps {
   data?: DrawdownPoint[];
 }
 
 export function DrawdownChart({ data: externalData }: DrawdownChartProps) {
-  const data = externalData ?? generateMockDrawdown();
+  const data = externalData ?? [];
   const maxDrawdown = Math.min(...data.map((d) => d.drawdown));
 
   const formatDate = (dateStr: string) => {

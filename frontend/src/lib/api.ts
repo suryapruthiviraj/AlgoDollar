@@ -1,6 +1,6 @@
 import axios, { AxiosInstance, InternalAxiosRequestConfig, AxiosResponse, AxiosError } from 'axios';
 import type {
-  ApiResponse,
+  EquityCurvePoint,
   PortfolioOverview,
   Position,
   CapitalAllocation,
@@ -14,6 +14,7 @@ import type {
   SectorData,
   RiskState,
   RiskLimits,
+  RiskLimitsResponse,
   SystemHealth,
   UserSettings,
   BacktestConfig,
@@ -63,25 +64,95 @@ api.interceptors.response.use(
   },
 );
 
-// Helper to unwrap ApiResponse
+// ─── Payload shape ────────────────────────────────────────────────────────────
+//
+// TWO MISMATCHES THAT MADE EVERY CALL RETURN `undefined`
+//
+// 1. These helpers unwrapped `res.data.data`, assuming every response was
+//    wrapped in an `{ data: ... }` envelope. FastAPI returns the payload
+//    directly, so `.data` on it was always undefined — every hook in the app
+//    received undefined and every component fell back to its placeholder. That
+//    is why the dashboard looked like a mock: the real values never arrived.
+//
+// 2. The backend serialises snake_case (`total_capital`); every type and every
+//    component here reads camelCase (`totalCapital`). Even with the envelope
+//    fixed, each field would still have been undefined.
+//
+// Both are handled here rather than by renaming fields on either side: the
+// Python API keeps Python conventions, the TypeScript keeps TypeScript ones,
+// and exactly one place translates.
+
+function toCamel(key: string): string {
+  return key.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase());
+}
+
+function toSnake(key: string): string {
+  return key.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
+}
+
+/** Deep key conversion. Arrays and primitives pass through unchanged. */
+function convertKeys(value: unknown, convert: (k: string) => string): unknown {
+  if (Array.isArray(value)) return value.map((v) => convertKeys(v, convert));
+  if (value === null || typeof value !== 'object') return value;
+  // Date and other class instances must not be rebuilt as plain objects.
+  if (Object.getPrototypeOf(value) !== Object.prototype) return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([k, v]) => [
+      convert(k),
+      convertKeys(v, convert),
+    ]),
+  );
+}
+
+/**
+ * Unwrap the payload and camelise it.
+ *
+ * The envelope is still tolerated: a response that genuinely carries
+ * `{ data, success }` is unwrapped, anything else is used as-is. Assuming one
+ * shape and silently producing undefined for the other is the bug this
+ * replaces.
+ */
+function unwrap<T>(body: unknown): T {
+  const payload =
+    body !== null &&
+    typeof body === 'object' &&
+    'data' in (body as Record<string, unknown>) &&
+    'success' in (body as Record<string, unknown>)
+      ? (body as Record<string, unknown>).data
+      : body;
+  return convertKeys(payload, toCamel) as T;
+}
+
+/** Query params are sent in the casing the backend declares them in. */
+function snakeParams(
+  params?: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  if (!params) return undefined;
+  return Object.fromEntries(
+    Object.entries(params)
+      .filter(([, v]) => v !== undefined && v !== null)
+      .map(([k, v]) => [toSnake(k), v]),
+  );
+}
+
 async function get<T>(url: string, params?: Record<string, unknown>): Promise<T> {
-  const res = await api.get<ApiResponse<T>>(url, { params });
-  return res.data.data;
+  const res = await api.get(url, { params: snakeParams(params) });
+  return unwrap<T>(res.data);
 }
 
 async function post<T>(url: string, data?: unknown): Promise<T> {
-  const res = await api.post<ApiResponse<T>>(url, data);
-  return res.data.data;
+  const res = await api.post(url, convertKeys(data, toSnake));
+  return unwrap<T>(res.data);
 }
 
 async function put<T>(url: string, data?: unknown): Promise<T> {
-  const res = await api.put<ApiResponse<T>>(url, data);
-  return res.data.data;
+  const res = await api.put(url, convertKeys(data, toSnake));
+  return unwrap<T>(res.data);
 }
 
 async function patch<T>(url: string, data?: unknown): Promise<T> {
-  const res = await api.patch<ApiResponse<T>>(url, data);
-  return res.data.data;
+  const res = await api.patch(url, convertKeys(data, toSnake));
+  return unwrap<T>(res.data);
 }
 
 // ─── Portfolio ────────────────────────────────────────────────────────────────
@@ -90,8 +161,11 @@ export const portfolioApi = {
   getPositions: (strategy?: StrategyName) =>
     get<Position[]>('/api/v1/portfolio/positions', strategy ? { strategy } : undefined),
   getAllocation: () => get<CapitalAllocation>('/api/v1/portfolio/allocation'),
+  // Returns the EQUITY CURVE, not an overview: the backend's
+  // /portfolio/performance is declared `list[EquityCurvePoint]`. Typed as
+  // PortfolioOverview, every consumer saw a shape the endpoint never sends.
   getPerformance: (period: '1D' | '1W' | '1M' | '3M' | '6M' | '1Y' | '3Y' | 'ALL') =>
-    get<PortfolioOverview>('/api/v1/portfolio/performance', { period }),
+    get<EquityCurvePoint[]>('/api/v1/portfolio/performance', { period }),
 };
 
 // ─── Allocation ───────────────────────────────────────────────────────────────
@@ -192,7 +266,7 @@ export const researchApi = {
 // ─── Risk ─────────────────────────────────────────────────────────────────────
 export const riskApi = {
   getState: () => get<RiskState>('/api/v1/risk/state'),
-  getLimits: () => get<RiskLimits>('/api/v1/risk/limits'),
+  getLimits: () => get<RiskLimitsResponse>('/api/v1/risk/limits'),
   squareOffAll: (strategy?: StrategyName) =>
     post<{ ordersPlaced: number }>('/api/v1/risk/square-off', { strategy }),
 };
@@ -204,7 +278,84 @@ export const notificationsApi = {
   markAllRead: () => patch<void>('/api/v1/notifications/read-all'),
 };
 
-// ─── Audit ────────────────────────────────────────────────────────────────────
+// ─── Execution decisions ──────────────────────────────────────────────────────
+//
+// Every execution attempt, INCLUDING every refusal, with the specific gate that
+// caused it. This is what lets the UI say
+//
+//     RELIANCE BUY x12 rejected — sector exposure limit
+//
+// rather than showing an empty trade list, which reads identically to a quiet
+// market, a dead feed and an engaged kill switch.
+
+export interface ExecutionDecision {
+  auditId: string;
+  timestamp: string;
+  tradingMode: string;
+  symbol: string | null;
+  side: string | null;
+  quantity: number | null;
+  strategy: string | null;
+
+  outcome: string;
+  submitted: boolean;
+  /** "RELIANCE BUY x12 rejected — sector exposure limit" */
+  headline: string;
+  /** The gate, in plain language. */
+  reason: string | null;
+  /** The numbers behind it, casing preserved. */
+  detail: string | null;
+  rawReason: string | null;
+  failedChecks: string[];
+  failedGates: string[];
+
+  killSwitchActive: boolean | null;
+  reconciliationState: string | null;
+  eligibilityState: string | null;
+
+  brokerOrderId: string | null;
+  fillQuantity: number | null;
+  averageFillPrice: number | null;
+  intendedNotional: number | null;
+  edgeScore: number | null;
+  expectedReturn: number | null;
+  error: string | null;
+}
+
+export interface ExecutionDecisionsResponse {
+  entries: ExecutionDecision[];
+  total: number;
+  submitted: number;
+  rejected: number;
+  source: string;
+  /**
+   * Set when the trail itself could not be read. "Nothing was attempted" and
+   * "we cannot see what was attempted" must never render the same way.
+   */
+  unavailableReason: string | null;
+}
+
+export interface ExecutionAuditFilters {
+  limit?: number;
+  rejectedOnly?: boolean;
+  symbol?: string;
+  strategy?: string;
+}
+
+export const executionApi = {
+  getDecisions: (filters?: ExecutionAuditFilters) =>
+    get<ExecutionDecisionsResponse>('/api/v1/audit', {
+      limit: filters?.limit,
+      rejected_only: filters?.rejectedOnly,
+      symbol: filters?.symbol,
+      strategy: filters?.strategy,
+    } as Record<string, unknown>),
+  getDecision: (auditId: string) =>
+    get<ExecutionDecision>(`/api/v1/audit/${auditId}`),
+};
+
+// Kept for the existing audit page, which lists database AuditLog rows rather
+// than execution decisions. The two are different records and are not merged.
 export interface AuditFilters {
   startDate?: string;
   endDate?: string;
