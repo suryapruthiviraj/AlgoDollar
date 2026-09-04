@@ -17,10 +17,10 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: false,
   },
 
-  // ESLint during builds
-  eslint: {
-    ignoreDuringBuilds: false,
-  },
+  // The `eslint` key is gone in Next 16, along with the `next lint` command it
+  // configured — `next build` no longer runs ESLint at all. Linting is now a
+  // separate `eslint .` step (`npm run lint`), which CI runs in its own job, so
+  // nothing is skipped; it just no longer rides along with the build.
 
   // WebSocket proxy note:
   // Next.js does not natively proxy WebSocket connections via rewrites.

@@ -32,7 +32,7 @@ WORKDIR /app
 # now resolved: the repository had no lockfile at all, and next@15.0.0 declared
 # a peer range (`react: "^18.2.0 || 19.0.0-rc-..."`) that excluded the stable
 # react@19 which `^19.0.0` resolves to, so a plain install died with ERESOLVE.
-# A lockfile is now committed and next is 15.5.25, so the peer conflict and the
+# A lockfile is now committed and next is 16.3.4, so the peer conflict and the
 # `--legacy-peer-deps` escape hatch are both unnecessary.
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund

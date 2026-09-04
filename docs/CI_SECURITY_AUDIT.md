@@ -99,19 +99,80 @@ Confirmed clean: nothing privileged, and every volume is named — **no host bin
 
 111 ruff errors, and the config used the deprecated top-level `select`/`ignore` (warning on every run). Moved under `[tool.ruff.lint]`; 56 issues auto-fixed; the full suite was re-run after each pass with no behaviour change.
 
+### 2.12 Password hashing was completely broken (HIGH)
+
+The most serious defect found in this phase, and it was found only because `app/core/security.py` — the module guarding every authenticated route — had **zero tests**. The first test written against it failed immediately:
+
+```
+hash_password("correct horse battery staple")
+ValueError: password cannot be longer than 72 bytes
+```
+
+on a **28-character** password.
+
+| | |
+|---|---|
+| **Root cause** | `passlib` 1.7.4 (last released 2020, effectively unmaintained) reads `bcrypt.__about__.__version__`, an attribute `bcrypt` removed in 4.1. With `bcrypt` 5.x the failed version probe puts passlib on a code path where *every* `hash()` call raises, regardless of the actual input length. |
+| **Impact** | Any user registration or password change would have raised `ValueError` → HTTP 500. Raw `bcrypt` was verified working; passlib alone was at fault. |
+| **Why it was invisible** | Nothing tested it, and `hash_password` is not yet called by any application code, so no route exercised it either. |
+| **Fix** | `passlib` removed; `bcrypt` called directly. |
+
+bcrypt's **72-byte input limit is real**, not a passlib artifact, and the two obvious ways to handle it are both wrong:
+
+- **truncating to 72 bytes** makes every password sharing a 72-byte prefix equivalent — a silent authentication weakness;
+- **rejecting long input** turns a strong passphrase into an error.
+
+Input is therefore SHA-256'd and base64'd first, mapping any length to a fixed 44 bytes — what Django and passlib's own `bcrypt_sha256` do. base64 rather than the raw digest because a raw digest can contain `NUL`, which truncates the C string bcrypt hashes. `test_long_passphrases_are_not_truncated_to_72_bytes` asserts the property directly.
+
+**No stored hashes were affected**: there are no migrations, no seed data, and no caller — verified before changing the format.
+
+### 2.13 Two dependency advisories that no version bump could ever fix
+
+`python-jose` carries **PYSEC-2025-185** and requires `ecdsa` (`Required-by: python-jose`, nothing else), which carries **PYSEC-2026-1325**. Neither has a published fix, so no pin could clear them — pinning would have meant carrying two permanently-unpatched advisories in the authentication path.
+
+`app/core/security.py` used exactly three symbols from it (`jwt.encode`, `jwt.decode`, `JWTError`), all of which PyJWT provides. **The dependency was removed rather than suppressed.** Removing it dropped `ecdsa` with it: 4 advisories cleared by deleting a dependency.
+
+`decode()` still passes `algorithms` explicitly and never reads the token header's own `alg`; `test_alg_none_is_rejected` pins the classic forgery.
+
+### 2.14 `requirements.txt` was auditing a dependency set nothing installed
+
+`pyproject.toml` declares `>=` ranges and is what both CI (`pip install -e ".[test]"`) and local development install. `requirements.txt` is the pinned file `pip-audit` reads. The two had **drifted**: the audited file still named `starlette==0.41.3`, `lightgbm==4.5.0` and `python-multipart==0.0.12` while every real environment had long since resolved to current versions.
+
+So the scanner was reporting on a set that nothing actually ran. Both files are now consistent, and the **pyproject floors were raised too** — otherwise a fresh resolve on a clean machine could fall back onto the vulnerable versions the pins had just removed.
+
+| Package | Was | Now | Advisories cleared |
+|---|---|---|---|
+| `cryptography` | 43.0.3 | 50.0.1 | GHSA-537c-gmf6-5ccf, PYSEC-2026-3552/3553/3554 |
+| `starlette` | 0.41.3 | 1.6.0 | PYSEC-2026-161, 1941, 1942, 2280, 2281, 248, 249 |
+| `python-multipart` | 0.0.12 | 0.0.32 | PYSEC-2026-1851, 1852, 3036–3040 |
+| `lightgbm` | 4.5.0 | 4.7.0 | PYSEC-2024-231 |
+| `fastapi` | 0.115.5 | 0.141.1 | — (required for starlette 1.x) |
+| `python-jose` + `ecdsa` | 3.3.0 / 0.19.2 | **removed** | PYSEC-2024-232/233, PYSEC-2025-185, PYSEC-2026-1325 |
+
+### 2.15 CI linted the application but not the tests
+
+`ruff check app` never looked at `tests/`, where **158 findings** had accumulated. Two of them were substantive: `test_07_a_broker_rejection_...` and `test_16e_zero_traded_volume_...` each computed an `ExecutionResult` and asserted nothing about it. Both now assert on the outcome.
+
+CI runs `ruff check app tests`. Test code gates releases and is held to the same bar.
+
 ---
 
 ## 3. Suppressions — complete and honest list
 
 **No security finding was suppressed.** No scanner was disabled, no `continue-on-error`, no `|| true`, no `xfail`, no skipped test.
 
-Three **style** rules are ignored, each with in-file justification:
+Four **style** rules are ignored, each with in-file justification. None is a security or correctness rule:
 
-| Rule | Why |
-|---|---|
-| `N803` / `N806` | Numerical code follows mathematical convention: `X` design matrix, `y` target, `Sigma` covariance. Renaming to `x_train`/`sigma` makes the code *harder* to check against the formulas it implements. |
-| `N818` | `LiveTradingBlocked`, `IllegalStateTransition` read as conditions at the call site. An `-Error` suffix adds nothing and renaming is a breaking change across the execution and governance layers. |
-| `E712` | **Narrow, two lines only**, via per-line `# noqa`. SQLAlchemy requires `== True` in a SQL expression; `is True` has no SQL form. Not a blanket ignore. |
+| Rule | Scope | Why |
+|---|---|---|
+| `N803` / `N806` | all | Numerical code follows mathematical convention: `X` design matrix, `y` target, `Sigma` covariance. Renaming to `x_train`/`sigma` makes the code *harder* to check against the formulas it implements. |
+| `N818` | all | `LiveTradingBlocked`, `IllegalStateTransition` read as conditions at the call site. An `-Error` suffix adds nothing and renaming is a breaking change across the execution and governance layers. |
+| `E712` | **two lines** | Per-line `# noqa`. SQLAlchemy requires `== True` in a SQL expression; `is True` has no SQL form. Not a blanket ignore. |
+| `N802` | `tests/**` only | Regression tests are deliberately named `test_BUG_<the-defect-it-pins>`; the uppercase marker is the point, since it shows at a glance which tests exist because something was once broken. Every other rule applies to test code exactly as to application code. |
+
+Exactly **one dependency advisory** is ignored, by ID, and it is not a severity floor: `PYSEC-2020-25` (autobahn 19.11.2), because `kiteconnect` — Zerodha's official SDK and the only supported way to reach the broker — hard-pins the vulnerable version in every published release (verified against 4.2.0, 5.0.1, 5.1.0, 5.2.0, 5.2.1). See §7. Every other advisory, at every severity, still fails the build.
+
+The counter-example that shows this is not a habit: `python-jose` and `ecdsa` each carry an advisory with **no published fix** — the exact situation where an `--ignore-vuln` would have been easiest. They were removed instead (§2.13).
 
 ---
 

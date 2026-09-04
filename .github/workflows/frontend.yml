@@ -33,12 +33,13 @@ jobs:
         with:
           persist-credentials: false
 
-      # frontend/package-lock.json is not committed. setup-node's npm cache is
-      # keyed on a lockfile, and pointing `cache-dependency-path` at a file that
-      # does not exist is a hard error ("Some specified paths were not resolved,
-      # unable to cache dependencies"), not a warning. So detect it instead of
-      # assuming it — and pick up the cache automatically once someone commits
-      # a lockfile, without another edit here.
+      # setup-node's npm cache is keyed on a lockfile, and pointing
+      # `cache-dependency-path` at a file that does not exist is a hard error
+      # ("Some specified paths were not resolved, unable to cache
+      # dependencies"), not a warning. frontend/package-lock.json IS committed
+      # now, so the `true` branch is the one that runs; the detection stays so
+      # that deleting the lockfile degrades to a warning instead of breaking
+      # the job outright.
       - name: Detect npm lockfile
         id: lockfile
         run: |
@@ -73,26 +74,24 @@ jobs:
           if [ -f package-lock.json ]; then
             npm ci
           else
-            # --legacy-peer-deps is required, not cosmetic: next@15.0.0 declares
-            # peerDependencies.react as "^18.2.0 || 19.0.0-rc-65a56d0e-20241020",
-            # which excludes the stable react@19 that package.json's "^19.0.0"
-            # resolves to, so a plain `npm install` dies with ERESOLVE. The same
-            # flag is used, for the same reason, in frontend/Dockerfile.
-            # Upgrading next to >=15.0.3 in package.json removes the need.
+            # --legacy-peer-deps is a leftover from next@15.0.0, whose
+            # peerDependencies.react excluded the stable react@19 this project
+            # uses, making a plain `npm install` die with ERESOLVE. next@16
+            # accepts react@19 properly, so this is belt-and-braces for the
+            # no-lockfile path only — `npm ci` above uses no such flag.
             npm install --legacy-peer-deps --no-audit --no-fund
           fi
 
-      # `next lint` does not fail cleanly when no ESLint configuration exists —
-      # it opens an interactive "How would you like to configure ESLint?" menu,
-      # which on a runner paints a prompt into the log and exits 1 with no
-      # explanation of what went wrong. frontend/ currently has no .eslintrc*
-      # and no eslint.config.*, so name the missing thing instead.
+      # `npm run lint` is `eslint .` — Next 16 REMOVED the `next lint` command,
+      # and under it `next lint` is parsed as `next <directory>` and dies with
+      # "Invalid project directory provided, no such directory: .../lint".
       #
-      # CI deliberately does NOT generate a config on the fly (`next lint
-      # --strict` would): linting against rules nobody reviewed and nobody can
-      # see in the diff proves nothing. eslint-config-next is already a
-      # devDependency, so committing frontend/.eslintrc.json containing
-      # {"extends": "next/core-web-vitals"} is all this needs.
+      # ESLint exits non-zero with a usage error when it finds no config, which
+      # reads as a lint failure rather than a missing-setup problem. This
+      # preflight names the actual cause instead. CI deliberately does NOT
+      # generate a config on the fly: linting against rules nobody reviewed and
+      # nobody can see in the diff proves nothing.
+      #
       # Lint, type-check and build are independent given a successful install,
       # so each runs on its own rather than stopping the job at the first
       # failure. One push then reports everything that is wrong.
@@ -109,13 +108,13 @@ jobs:
             if [ -f "$f" ]; then config="$f"; break; fi
           done
           if [ -z "$config" ]; then
-            echo "::error file=frontend/package.json::frontend/ has no ESLint configuration, so \`npm run lint\` (next lint) cannot run non-interactively. Commit frontend/.eslintrc.json with {\"extends\": \"next/core-web-vitals\"} — eslint-config-next is already a devDependency."
+            echo "::error file=frontend/package.json::frontend/ has no ESLint configuration, so \`npm run lint\` (eslint .) cannot run. Commit frontend/eslint.config.mjs spreading eslint-config-next/core-web-vitals and eslint-config-next/typescript — eslint-config-next is already a devDependency."
             exit 1
           fi
           echo "Using ESLint configuration: frontend/$config"
 
-      # Gated on the preflight, not just the install: without a config file
-      # `next lint` blocks on an interactive prompt rather than failing.
+      # Gated on the preflight, not just the install, so a missing config is
+      # reported as a missing config rather than as a lint failure.
       - name: Run ESLint
         if: ${{ !cancelled() && steps.eslint_config.outcome == 'success' }}
         working-directory: frontend

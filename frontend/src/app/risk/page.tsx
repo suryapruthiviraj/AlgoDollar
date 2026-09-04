@@ -87,14 +87,21 @@ export default function RiskPage() {
 
   const sectorConcentration = computeSectorConcentration(positions ?? []);
 
-  // Mock risk contribution by position
-  const riskContributions: RiskContribution[] = (positions ?? []).slice(0, 8).map((pos) => ({
-    symbol: pos.symbol,
-    strategy: pos.strategy,
-    riskContributionPct: pos.portfolioWeight * 0.8 + Math.random() * 2,
-    marketValue: pos.marketValue,
-    beta: 0.7 + Math.random() * 0.8,
-  }));
+  // REMOVED: a "Risk Contribution by Position" chart whose bars were
+  // fabricated. It read:
+  //
+  //     riskContributionPct: pos.portfolioWeight * 0.8 + Math.random() * 2,
+  //     beta:                0.7 + Math.random() * 0.8,
+  //
+  // so a risk dashboard was drawing invented risk contributions and betas next
+  // to real position data, re-rolled on every render. Marginal risk
+  // contribution needs a covariance matrix and beta needs a regression against
+  // an index; the backend computes neither, so there is nothing real to show.
+  //
+  // This is the same call already made for the /research backtest and /markets
+  // sector endpoints, which now return 501 rather than invent numbers: an empty
+  // panel that says why is honest, a plausible-looking chart is not. Restore
+  // the panel when the backend can supply measured values.
 
   const activeBreaches = riskState?.activeBreach ?? [];
 
@@ -197,32 +204,18 @@ export default function RiskPage() {
 
         {/* Risk Contribution + Sector Concentration */}
         <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Risk Contribution by Position */}
+          {/* Risk Contribution by Position — see the note at the top of this
+              file. The chart that stood here plotted Math.random(), so it is
+              deliberately blank rather than plausible. */}
           <div className="bg-surface border border-border rounded-lg p-4">
             <h3 className="text-sm font-semibold text-text-primary mb-4">Risk Contribution by Position</h3>
-            {riskContributions.length > 0 ? (
-              <ResponsiveContainer width="100%" height={200}>
-                <BarChart
-                  data={riskContributions.sort((a, b) => b.riskContributionPct - a.riskContributionPct).slice(0, 8)}
-                  layout="vertical"
-                  margin={{ top: 0, right: 8, left: 60, bottom: 0 }}
-                >
-                  <XAxis type="number" tick={{ fill: '#6b7280', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `${v.toFixed(1)}%`} />
-                  <YAxis type="category" dataKey="symbol" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} width={55} />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: '#111118', border: '1px solid #1f2028', borderRadius: 6, fontSize: 12 }}
-                    formatter={(v: number) => [`${v.toFixed(2)}%`, 'Risk']}
-                  />
-                  <Bar dataKey="riskContributionPct" radius={[0, 3, 3, 0]}>
-                    {riskContributions.map((r, i) => (
-                      <Cell key={r.symbol} fill={SECTOR_COLORS[i % SECTOR_COLORS.length]} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="text-center text-muted text-sm py-8">No position data</div>
-            )}
+            <div className="flex flex-col items-center justify-center text-center py-8 gap-1">
+              <span className="text-sm text-muted">Not available</span>
+              <span className="text-xs text-muted max-w-xs">
+                Marginal risk contribution requires a position covariance matrix,
+                which this system does not yet compute.
+              </span>
+            </div>
           </div>
 
           {/* Sector Concentration */}

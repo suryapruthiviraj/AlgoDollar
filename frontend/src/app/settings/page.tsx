@@ -107,7 +107,19 @@ const DEFAULT_SETTINGS: UserSettings = {
 export default function SettingsPage() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
-  const [localSettings, setLocalSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
+  // `null` means "the user has not edited anything yet", so the server's
+  // settings show through. This replaced a `useState(DEFAULT_SETTINGS)` kept in
+  // sync by `useEffect(() => setLocalSettings(settings), [settings])`, which had
+  // two problems beyond the cascading render the linter flagged:
+  //
+  //   * it rendered DEFAULT_SETTINGS first and only corrected them after the
+  //     query resolved — so the page briefly showed a trading mode and risk
+  //     limits that were not the account's;
+  //   * any background refetch OVERWROTE edits the user had not saved yet.
+  //
+  // Deriving instead of syncing fixes both: unsaved edits now win over a
+  // refetch, and there is no default-value flash.
+  const [edited, setEdited] = useState<UserSettings | null>(null);
   const queryClient = useQueryClient();
 
   const { data: settings, isLoading } = useQuery({
@@ -116,24 +128,28 @@ export default function SettingsPage() {
     staleTime: 60_000,
   });
 
-  useEffect(() => {
-    if (settings) setLocalSettings(settings);
-  }, [settings]);
+  const localSettings: UserSettings = edited ?? settings ?? DEFAULT_SETTINGS;
 
   const save = useMutation({
     mutationFn: (s: Partial<UserSettings>) => settingsApi.update(s),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings'] });
       setShowSaveModal(false);
+      // Drop the local copy so the saved server state becomes the source of
+      // truth again; otherwise the form would keep showing a stale edit.
+      setEdited(null);
     },
   });
 
   const set = <K extends keyof UserSettings>(key: K, value: UserSettings[K]) => {
-    setLocalSettings((s) => ({ ...s, [key]: value }));
+    setEdited((s) => ({ ...(s ?? settings ?? DEFAULT_SETTINGS), [key]: value }));
   };
 
   const setRisk = <K extends keyof UserSettings['riskLimits']>(key: K, value: number) => {
-    setLocalSettings((s) => ({ ...s, riskLimits: { ...s.riskLimits, [key]: value } }));
+    setEdited((s) => {
+      const base = s ?? settings ?? DEFAULT_SETTINGS;
+      return { ...base, riskLimits: { ...base.riskLimits, [key]: value } };
+    });
   };
 
   if (isLoading) {
