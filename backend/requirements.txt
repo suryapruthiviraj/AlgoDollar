@@ -18,7 +18,7 @@ structlog==24.4.0
 python-multipart==0.0.32  # PYSEC-2026-1851/1852/3036-3040
 aiofiles==24.1.0
 celery[redis]==5.4.0
-websockets==13.1
+websockets==17.1
 slowapi==0.1.9
 bcrypt==5.0.0            # used directly; passlib 1.7.4 is broken with bcrypt>=4.1
 cryptography==50.0.1   # PYSEC-2026-3552/3553/3554, GHSA-537c-gmf6-5ccf
