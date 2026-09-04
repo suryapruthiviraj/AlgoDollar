@@ -47,7 +47,6 @@ from app.execution.safety import (
     StaleDataError,
 )
 
-
 # --------------------------------------------------------------------------- #
 #  Test doubles: one broker connection, one redis connection                   #
 # --------------------------------------------------------------------------- #

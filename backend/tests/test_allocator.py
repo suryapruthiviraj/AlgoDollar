@@ -6,12 +6,11 @@ bucket: longterm, swing, intraday, and cash reserve.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Inline stubs — match the expected real module interface

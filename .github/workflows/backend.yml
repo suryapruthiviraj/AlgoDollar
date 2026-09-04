@@ -99,7 +99,11 @@ jobs:
       - name: Run ruff linter
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         working-directory: backend
-        run: ruff check app
+        # `app tests` — not just `app`. Linting only the application let 158
+        # findings accumulate in tests/, including two tests that computed a
+        # result and asserted nothing about it. Test code gates releases; it is
+        # held to the same bar.
+        run: ruff check app tests
 
       - name: Run mypy type checker
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}

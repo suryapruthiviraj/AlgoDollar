@@ -31,7 +31,6 @@ import pytest
 
 from app.data.features import FeatureEngine
 
-
 # ---------------------------------------------------------------------------
 # Synthetic data with known properties
 # ---------------------------------------------------------------------------

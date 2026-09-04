@@ -29,11 +29,11 @@ from app.strategies.base import (
     _annualized_sharpe_se,
 )
 from app.strategies.intraday import (
+    _CONTINUATION_COEF,
+    _SQUARE_OFF_TIME,
     IST,
     IntradayStrategy,
     NaiveDatetimeError,
-    _CONTINUATION_COEF,
-    _SQUARE_OFF_TIME,
     now_ist,
 )
 from app.strategies.longterm import (

@@ -1024,10 +1024,9 @@ async def test_INV_05_randomized_eligibility_failures_never_place_a_live_order()
     against a live venue that would accept anything.
     """
     from app.governance.eligibility import (
-        EligibilityReport,
-        EligibilityState,
-        GateResult,
         _CANONICAL_GATES,
+        EligibilityReport,
+        GateResult,
         assess_live_trading_eligibility,
         gather_repo_evidence,
     )
@@ -1167,6 +1166,7 @@ def test_INV_10_an_unknown_safety_state_cannot_become_live_eligible():
     substituted gate, not a forged payload.
     """
     from app.governance.eligibility import (
+        _CANONICAL_GATES,
         EligibilityReport,
         EligibilityState,
         Evidence,
@@ -1174,7 +1174,6 @@ def test_INV_10_an_unknown_safety_state_cannot_become_live_eligible():
         GateResult,
         LiveTradingBlocked,
         ReportProvenance,
-        _CANONICAL_GATES,
         assess_live_trading_eligibility,
         require_live_eligible,
     )

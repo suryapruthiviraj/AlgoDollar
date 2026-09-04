@@ -438,8 +438,8 @@ async def test_live_eligibility_gate_blocks_a_broker_that_is_not_paper():
     exercise the ORDER gates rather than the eligibility report; this test is
     what stops that declaration from becoming a hole in the eligibility gate.
     """
-    from app.governance.eligibility import LiveTradingBlocked
     from app.execution.order_manager import _is_paper_broker
+    from app.governance.eligibility import LiveTradingBlocked
 
     assert _is_paper_broker(FakeBroker()) is True
 
@@ -1223,7 +1223,7 @@ def test_REGRESSION_the_app_routes_orders_through_the_execution_layer():
         for alias in node.names
     }
     assert "app.execution.bootstrap.build_execution_stack" in imported
-    from app.execution.bootstrap import build_execution_stack   # noqa: F401
+    from app.execution.bootstrap import build_execution_stack  # noqa: F401
     assert "build_execution_stack(" in main_src, "imported but never called"
     assert "app.state.execution_service" in main_src
 

@@ -860,11 +860,11 @@ async def test_02c_a_forged_eligibility_report_cannot_unlock_a_live_order():
     Anyone who can write JSON could otherwise mint a LIVE_ELIGIBLE verdict.
     """
     from app.governance.eligibility import (
+        _CANONICAL_GATES,
         EligibilityReport,
         EligibilityState,
         GateResult,
         ReportProvenance,
-        _CANONICAL_GATES,
     )
 
     forged = EligibilityReport(results=tuple(
@@ -1174,6 +1174,7 @@ async def test_07_a_broker_rejection_leaves_cash_and_holdings_untouched():
 
     after = await stack.facts()
     assert after.order_count == before.order_count + 1, "the order must reach the broker"
+    assert result.submitted is True, "a broker-side rejection is not a pre-trade block"
     assert after.order_statuses[-1] == OrderStatus.REJECTED
     assert after.reject_reasons[-1] == RejectReason.INSUFFICIENT_HOLDINGS
     assert after.filled_qty == before.filled_qty, "a rejected order filled"
@@ -1836,6 +1837,7 @@ async def test_16e_zero_traded_volume_produces_no_fill():
     result = await stack.service.submit_signal(signal(), 10, **WIDE_RISK)
 
     after = await stack.facts()
+    assert result.submitted is True, "the order should reach the venue and simply not fill"
     assert after.filled_qty == 0, "an order filled against no displayed volume"
     assert after.trade_count == 0
     assert after.total_cash == before.total_cash

@@ -9,11 +9,10 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List
+from typing import Dict
 
 import numpy as np
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Inline stubs — mirrors the expected real module interface so tests remain

@@ -199,11 +199,11 @@ def test_pooled_correlation_would_be_misleading():
 
     midx = pd.MultiIndex.from_tuples(rows, names=["date", "symbol"])
     p = pd.Series(preds, index=midx)
-    l = pd.Series(labels, index=midx)
+    y = pd.Series(labels, index=midx)
 
     from scipy import stats as _st
-    pooled, _ = _st.spearmanr(p.values, l.values)
-    per_date = cross_sectional_ic(p, l).mean()
+    pooled, _ = _st.spearmanr(p.values, y.values)
+    per_date = cross_sectional_ic(p, y).mean()
 
     assert pooled > 0.4, f"expected large pooled correlation, got {pooled:.3f}"
     assert abs(per_date) < 0.10, (
