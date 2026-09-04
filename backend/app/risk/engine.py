@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
 import pandas as pd
+
+from app.core.config import settings
+from app.core.exceptions import RiskEngineError
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +78,135 @@ class StrategyHealth:
 
 
 class RiskEngine:
-    """Stateless risk calculation engine."""
+    """
+    Stateless risk calculation engine.
+
+    "Stateless" means it holds no portfolio of its own — every calculation is
+    given the positions and prices it needs. :meth:`approve_trade` is the one
+    exception in shape only: strategies call it with just
+    ``(symbol, size, sleeve)``, so the portfolio context it judges against must
+    be supplied first via :meth:`set_portfolio_context`.
+    """
+
+    def __init__(self) -> None:
+        self._ctx: Optional[dict[str, Any]] = None
+
+    # ------------------------------------------------------------------ #
+    #  Per-trade approval (the gate strategies call)                       #
+    # ------------------------------------------------------------------ #
+
+    def set_portfolio_context(
+        self,
+        *,
+        portfolio_value: float,
+        available_cash: float,
+        positions: Optional[list[dict]] = None,
+        max_positions: Optional[int] = None,
+    ) -> None:
+        """
+        Supply the book that :meth:`approve_trade` judges against.
+
+        Must be called before each sizing pass. Stale context is worse than
+        none: approving a trade against last hour's portfolio value is how a
+        concentration limit silently stops binding.
+        """
+        if portfolio_value is None or portfolio_value <= 0:
+            raise ValueError(
+                "portfolio_value must be > 0 to evaluate a concentration limit"
+            )
+        self._ctx = {
+            "portfolio_value": float(portfolio_value),
+            "available_cash": float(available_cash),
+            "positions": list(positions or []),
+            "max_positions": (
+                int(max_positions) if max_positions is not None
+                else int(settings.max_positions)
+            ),
+        }
+
+    def clear_portfolio_context(self) -> None:
+        self._ctx = None
+
+    def approve_trade(self, symbol: str, size: float, sleeve: str) -> bool:
+        """
+        Approve one proposed trade of ``size`` rupees in ``symbol``.
+
+        FAILS CLOSED. Called from ``BaseStrategy._risk_engine_approves``, which
+        treats a raise as a block — so every path out of here that is not a
+        clear "yes" stops the trade.
+
+        This method did not exist. Strategies have always called it, and
+        ``_risk_engine_approves`` raises RiskEngineError when it is absent, so
+        every strategy sizing call against a real RiskEngine blocked. That
+        failed safe, but it also meant the risk engine and the strategies were
+        never actually connected.
+
+        The checks are the configured limits, not new policy:
+          * single-stock concentration  (settings.max_single_stock_pct)
+          * intraday capital cap        (settings.max_intraday_capital_pct)
+          * position count             (settings.max_positions)
+          * available cash
+        """
+        if self._ctx is None:
+            raise RiskEngineError(
+                f"approve_trade({symbol!r}) called with no portfolio context. "
+                "Call set_portfolio_context() first — approving a trade without "
+                "knowing the book means the concentration limit is not applied."
+            )
+        if not size or size <= 0:
+            return False
+
+        ctx = self._ctx
+        pv = ctx["portfolio_value"]
+        sleeve_l = (sleeve or "").lower()
+
+        if size > ctx["available_cash"]:
+            logger.info(
+                "RISK BLOCK %s (%s): size Rs %.2f exceeds available cash Rs %.2f",
+                symbol, sleeve, size, ctx["available_cash"],
+            )
+            return False
+
+        cap = pv * float(settings.max_single_stock_pct)
+        # Existing exposure counts: a limit applied per ORDER rather than per
+        # POSITION is trivially defeated by splitting one order into several.
+        held = sum(
+            float(p.get("quantity", 0) or 0) * float(p.get("average_price", 0) or 0)
+            for p in ctx["positions"]
+            if str(p.get("symbol", "")).upper() == str(symbol).upper()
+        )
+        if held + size > cap:
+            logger.info(
+                "RISK BLOCK %s (%s): Rs %.2f existing + Rs %.2f proposed exceeds "
+                "the %.1f%% single-stock cap (Rs %.2f)",
+                symbol, sleeve, held, size, settings.max_single_stock_pct * 100, cap,
+            )
+            return False
+
+        if sleeve_l == "intraday":
+            intraday_cap = pv * float(settings.max_intraday_capital_pct)
+            if size > intraday_cap:
+                logger.info(
+                    "RISK BLOCK %s (intraday): Rs %.2f exceeds the %.1f%% "
+                    "intraday capital cap (Rs %.2f)",
+                    symbol, size, settings.max_intraday_capital_pct * 100, intraday_cap,
+                )
+                return False
+
+        open_symbols = {
+            str(p.get("symbol", "")).upper()
+            for p in ctx["positions"]
+            if float(p.get("quantity", 0) or 0) != 0
+        }
+        if str(symbol).upper() not in open_symbols:
+            if len(open_symbols) >= ctx["max_positions"]:
+                logger.info(
+                    "RISK BLOCK %s (%s): %d open positions is at the limit of %d",
+                    symbol, sleeve, len(open_symbols), ctx["max_positions"],
+                )
+                return False
+
+        return True
 
     # ------------------------------------------------------------------ #
     #  Portfolio risk                                                      #

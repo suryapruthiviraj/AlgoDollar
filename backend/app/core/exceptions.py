@@ -59,3 +59,19 @@ class AmbiguousOrderStateError(AlgoDollarError):
 
     Never handle this by retrying.
     """
+
+
+class RiskEngineError(RuntimeError):
+    """
+    The risk engine could not answer, or refused to.
+
+    Defined here rather than in app/strategies/base.py, which is where it used
+    to live: app/risk needs to raise it too, and risk importing from strategies
+    would invert the dependency (strategies consume risk, not the other way
+    round). app.strategies.base re-exports this name, so existing importers are
+    unaffected.
+
+    Raised — never returned as a falsy verdict — because callers treat a raise
+    as a BLOCK. "The risk check could not run" must never read as "the risk
+    check passed".
+    """

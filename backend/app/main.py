@@ -109,6 +109,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # stays closed, so every attempt produces an audited rejection rather than
     # an unhandled error somewhere upstream.
     app.state.execution_stack = None
+    app.state.trading_pipeline = None
     try:
         # build_production_stack, NOT build_execution_stack(). The latter takes
         # every collaborator as an argument and defaults them all to None, which
@@ -125,6 +126,26 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         app.state.execution_stack = stack
         app.state.execution_service = stack.service
 
+        # The signal pipeline: market data -> strategy -> sizing -> the
+        # execution service above. Published here so the API can run a cycle;
+        # it is NOT started on a timer. Nothing schedules itself into placing
+        # orders — a cycle happens because something asked for one.
+        try:
+            from app.engine.pipeline import build_default_pipeline
+
+            app.state.trading_pipeline = build_default_pipeline(
+                execution_service=stack.service,
+                data_broker=getattr(stack.broker, "_data_broker", None),
+            )
+            log.info(
+                "trading_pipeline_ready",
+                strategies=[type(s).__name__ for s in app.state.trading_pipeline.strategies],
+                universe=len(app.state.trading_pipeline.universe),
+            )
+        except Exception as exc:  # noqa: BLE001
+            app.state.trading_pipeline = None
+            log.error("trading_pipeline_unavailable", error=str(exc))
+
         if stack.trading_permitted:
             log.info("execution_stack_ready", trading_permitted=True)
         else:
@@ -139,6 +160,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         # object behind that might later be mistaken for a working one.
         app.state.execution_stack = None
         app.state.execution_service = None
+        app.state.trading_pipeline = None
         log.error(
             "execution_stack_unavailable",
             error=str(exc),

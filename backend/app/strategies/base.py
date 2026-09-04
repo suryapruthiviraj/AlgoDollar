@@ -24,6 +24,8 @@ from typing import Any, Dict, Iterable, List, Optional
 import numpy as np
 import pandas as pd
 
+from app.core.exceptions import RiskEngineError
+
 logger = logging.getLogger(__name__)
 
 
@@ -67,15 +69,9 @@ MAX_GROSS_EXPOSURE = 1.0
 MIN_RISK_REWARD = 1.0
 
 
-class RiskEngineError(RuntimeError):
-    """
-    Raised when the risk engine cannot render a verdict on a trade.
-
-    Deliberately fatal: an unavailable or broken risk engine must BLOCK the
-    trade (fail closed).  Never swallow this to "keep trading".
-    """
-
-
+# Re-exported from app.core.exceptions, where it now lives so that app.risk can
+# raise it too without strategies and risk importing each other.
+RiskEngineError = RiskEngineError
 # ---------------------------------------------------------------------------
 # Enums
 # ---------------------------------------------------------------------------

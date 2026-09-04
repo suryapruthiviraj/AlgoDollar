@@ -396,3 +396,119 @@ async def explain_allocation(
         explanation=explanation,
         factors=factors,
     )
+
+
+# ── Run one signal cycle ──────────────────────────────────────────────────────
+
+class CycleProposal(BaseModel):
+    symbol: str
+    strategy: str
+    direction: str
+    target_value: float
+    quantity: int
+    reference_price: float
+    submitted: bool
+    outcome: Optional[str] = None
+    reason: Optional[str] = None
+    broker_order_id: Optional[str] = None
+
+
+class CycleResponse(BaseModel):
+    """
+    The result of one pipeline cycle.
+
+    `no_trade` and `summary` are first-class rather than derived, because a
+    cycle that proposes nothing is a legitimate outcome and the caller needs to
+    know WHY it proposed nothing — no data, no signal, sized to zero, or
+    refused by a gate are four different answers.
+    """
+
+    ran: bool
+    trading_mode: str
+    trading_permitted: bool
+    no_trade: bool
+    summary: str
+    universe_size: int = 0
+    symbols_with_data: int = 0
+    signals_generated: int = 0
+    submitted: int = 0
+    blocked: int = 0
+    skipped_zero_size: int = 0
+    proposals: list[CycleProposal] = []
+    warnings: list[str] = []
+    errors: list[str] = []
+
+
+class RunCycleRequest(BaseModel):
+    available_capital: float
+    portfolio_value: Optional[float] = None
+    # Runs the full pipeline but stops before submitting. Useful for seeing
+    # what would be proposed; it weakens nothing, because every gate it would
+    # otherwise hit lives downstream of the submission it skips.
+    dry_run: bool = False
+
+
+@router.post("/run-cycle", response_model=CycleResponse)
+async def run_signal_cycle(
+    body: RunCycleRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+) -> CycleResponse:
+    """
+    Run ONE cycle: market data -> signals -> sizing -> orders.
+
+    Orders go through ``ExecutionService.submit_signal`` like everything else,
+    so the kill switch, risk, eligibility, idempotency and audit gates apply
+    exactly as they do to any other order. This endpoint decides WHAT to
+    propose; it has no privileged route to a broker.
+    """
+    pipeline = getattr(request.app.state, "trading_pipeline", None)
+    service = getattr(request.app.state, "execution_service", None)
+
+    if pipeline is None or service is None:
+        # Reported as ran=False rather than raising: "the pipeline is not
+        # available" is a different answer from "the pipeline ran and found
+        # nothing", and collapsing them would hide a broken deployment behind
+        # what looks like a quiet market.
+        return CycleResponse(
+            ran=False,
+            trading_mode=(
+                service.mode.value if service is not None else "unknown"
+            ),
+            trading_permitted=False,
+            no_trade=True,
+            summary=(
+                "The trading pipeline is not available; no cycle was run. This "
+                "is NOT a statement that no opportunity exists."
+            ),
+            errors=["trading pipeline unavailable at startup"],
+        )
+
+    if body.available_capital <= 0:
+        raise HTTPException(
+            status_code=400, detail="available_capital must be greater than zero"
+        )
+
+    run = await pipeline.run_once(
+        available_capital=body.available_capital,
+        portfolio_value=body.portfolio_value,
+        dry_run=body.dry_run,
+    )
+
+    stack = getattr(request.app.state, "execution_stack", None)
+    return CycleResponse(
+        ran=True,
+        trading_mode=service.mode.value,
+        trading_permitted=bool(stack.trading_permitted) if stack else False,
+        no_trade=run.no_trade,
+        summary=run.summary(),
+        universe_size=run.universe_size,
+        symbols_with_data=run.symbols_with_data,
+        signals_generated=run.signals_generated,
+        submitted=run.submitted,
+        blocked=run.blocked,
+        skipped_zero_size=run.skipped_zero_size,
+        proposals=[CycleProposal(**vars(p)) for p in run.proposals],
+        warnings=run.warnings,
+        errors=run.errors,
+    )

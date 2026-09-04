@@ -144,6 +144,58 @@ class TestRealStartupWiring:
         assert positions and positions[0].quantity == 10
         assert float(cash.cash) < OPENING_CASH, "the fill did not reduce cash"
 
+    async def test_startup_publishes_a_trading_pipeline(
+        self, sqlite_factory, monkeypatch
+    ):
+        """The signal pipeline must be reachable, not just the execution stack."""
+        import app.execution.runtime as runtime_mod
+        from app.main import create_app
+
+        real_build = runtime_mod.build_production_stack
+
+        async def build_with_test_boundaries(**kwargs):
+            kwargs["session_factory"] = sqlite_factory
+            kwargs["data_broker"] = DeterministicFeed()
+            kwargs["paper_clock"] = lambda: MARKET_OPEN_IST
+            kwargs["paper_state_path"] = None
+            return await real_build(**kwargs)
+
+        monkeypatch.setattr(
+            runtime_mod, "build_production_stack", build_with_test_boundaries
+        )
+
+        app = create_app()
+        async with app.router.lifespan_context(app):
+            pipeline = getattr(app.state, "trading_pipeline", None)
+            assert pipeline is not None, (
+                "startup built an execution stack but no pipeline, so nothing "
+                "in the running application can produce a signal"
+            )
+            assert pipeline.service is app.state.execution_service, (
+                "the pipeline routes to a different service than the one "
+                "startup published — there would be two order paths"
+            )
+            assert pipeline.universe, "the pipeline has an empty universe"
+            assert pipeline.data is not None, "the pipeline has no price source"
+
+    async def test_a_cycle_is_not_started_on_a_timer(self):
+        """
+        Nothing schedules itself into placing orders.
+
+        A cycle happens because something asked for one. This is checked
+        structurally because the failure mode — an app that starts trading by
+        itself on deploy — is not one to discover in production.
+        """
+        import pathlib
+        import re
+
+        src = pathlib.Path("app/main.py").read_text()
+        assert not re.search(r"create_task|ensure_future|BackgroundTasks|add_job", src), (
+            "app/main.py schedules background work; a trading cycle must be "
+            "triggered explicitly, never by a timer installed at startup"
+        )
+        assert "run_once(" not in src, "startup runs a trading cycle by itself"
+
     async def test_paper_is_the_default_trading_mode(self):
         """Never live unless someone explicitly asked for it."""
         from app.core.config import Settings
