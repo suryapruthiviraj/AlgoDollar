@@ -10,7 +10,7 @@
 
 > **SUPERSEDED IN PART.** This document covers the *engineering* audit, whose results all come from **synthetic data with known ground truth** — the correct way to verify that machinery is correct, and silent on whether any strategy is profitable.
 >
-> A subsequent phase acquired real NSE data (99 symbols, 2007–2024) and ran the research. Its outcome is in **[REAL_DATA_VALIDATION_REPORT.md](REAL_DATA_VALIDATION_REPORT.md)**, and the headline is:
+> A subsequent phase acquired real NSE data (99 symbols, 2007–2024) and ran the research. Its outcome is in **[REAL_DATA_VALIDATION_REPORT.md](REAL_DATA_VALIDATION_REPORT.md)**, and the headline is: *(SUPERSEDED — see [RESEARCH_VALIDATION.md](RESEARCH_VALIDATION.md); that dataset is not in this repository.)*
 >
 > **NO STRATEGY VALIDATED.** The leading candidate lost to a passive equal-weight portfolio on a final holdout (dev Sharpe +0.421 → holdout −0.067). Read that report for anything concerning performance.
 
@@ -310,7 +310,7 @@ IID resampling **understated the risk of ruin by a factor of two**. Any risk fig
 
 No model is approved, deployed, or deployable. `TRADING_MODE` remains `paper`. Live trading must stay disabled.
 
-This was subsequently confirmed against real data rather than merely asserted: ten candidates were tested on 19 years of NSE history and none reached significance, with the leading candidate then failing its final holdout. See [REAL_DATA_VALIDATION_REPORT.md](REAL_DATA_VALIDATION_REPORT.md) §5.
+This was subsequently confirmed against real data rather than merely asserted: ten candidates were tested on 19 years of NSE history and none reached significance, with the leading candidate then failing its final holdout. See [REAL_DATA_VALIDATION_REPORT.md](REAL_DATA_VALIDATION_REPORT.md) §5. *(SUPERSEDED — see [RESEARCH_VALIDATION.md](RESEARCH_VALIDATION.md); that dataset is not in this repository.)*
 
 A machine-readable gate now enforces this. `app/governance/eligibility.py` evaluates 23 fail-closed gates and currently reports `BLOCKED_INSUFFICIENT_DATA` with 1 gate passing. Unrecorded evidence counts as failure, an exception inside a gate counts as failure, and the state is a derived property — there is no code path that assigns `LIVE_ELIGIBLE`.
 

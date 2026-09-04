@@ -6,6 +6,58 @@
 
 ---
 
+## Release audit — final state
+
+Run against commit `HEAD` on the date of this document. Every row was verified by executing
+it, not by inspection.
+
+| Acceptance criterion | Status | Evidence |
+|---|---|---|
+| 1. PAPER end-to-end trading | **PASS** | Full chain driven through `app.main`'s real lifespan: startup → order SUBMITTED → 1 fill → position 10 → cash 1,000,000 → 974,952.25 → audit feed → clean shutdown |
+| 2. Persistence | **PASS** | Orders, state transitions, fills, positions, cash, average cost, realised P&L, strategy attribution, reconciliation runs. `tests/test_e2e_paper_trade.py` |
+| 3. Restart / recovery | **PASS** | Fixed this cycle — see the reconciliation defect below. `tests/test_failure_modes.py::TestRestart` |
+| 4. Reconciliation | **PASS** | OK / MISMATCH / UNAVAILABLE distinguished; unreachable broker never reports OK |
+| 5. Idempotency | **PASS** | UNIQUE `(user_id, client_order_id)` claimed before the broker call; retry-after-error and concurrent-duplicate both refused |
+| 6. Risk gates | **PASS** | Daily loss, daily risk budget, position count, cash, holdings, sector, position size, liquidity, turnover |
+| 7. Kill switch | **PASS** | Any source engaged = stop; an UNREADABLE switch counts as ENGAGED |
+| 8. Frontend shows real state | **PASS** | API envelope/casing defect fixed; fabricated charts removed |
+| 9. CI green | **PASS** | Backend CI, Frontend CI, Security Scanning, Safety Gates, Docker Build |
+| 10. No critical security defects | **PASS** | pip-audit, Bandit, TruffleHog, npm audit all green in CI; no secret tracked |
+| 11. Research status honest | **PASS** | `NOT VALIDATED`; stale report superseded |
+| 12. Live trading gated | **PASS** | `blocked_insufficient_data`, 22 of 31 gates failing, `trading_mode=paper` |
+
+### Defects this audit found and fixed
+
+**Restart after any fill reported a false MISMATCH (CRITICAL).** Broker fills carry the
+quantity under `qty`; reconciliation read `quantity`. Every broker fill therefore counted as
+ZERO, so a restart compared `broker=0` against `local=10`, latched the kill switch, and left
+the process permanently unable to trade. It failed *closed*, so nothing was at risk — but
+restart-after-trading was impossible, which is one of the properties reconciliation exists to
+provide.
+
+**Redis clients leaked on every restart.** `build_production_stack()` opened two clients and
+kept no handle, so shutdown could not release them. A container cycling repeatedly would
+exhaust the server's client limit.
+
+**Schema drift was silent.** `alembic` is a declared dependency but was never initialised;
+tables come from `create_all`, which creates missing tables and never alters existing ones.
+The columns added this cycle would never appear on an upgraded database, and the process
+would fail at the first query touching them. `verify_schema()` now names every missing table
+and column at startup.
+
+### Known gaps, stated rather than closed
+
+- **No migration tool.** `create_all` plus a drift check is the honest boundary of not having
+  one. An upgraded database needs the reported changes applied by hand.
+- **Daily loss and intraday capital limits are not measurable** — both need a persisted
+  intraday P&L series. Reported as `measurable: false`, never as 0%.
+- **Drawdown needs a persisted equity high-water mark**, which is not stored.
+- **Exits of held names with no originating signal are skipped**, not submitted: creating the
+  order would require fabricating a Signal into the audit trail.
+- **Swing ranked-opportunities and long-term factor scores** are not yet exposed by the API.
+
+---
+
 ## The structural fact that frames everything below
 
 **The execution layer is not connected to the application.**

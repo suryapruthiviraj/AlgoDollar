@@ -1,3 +1,21 @@
+> ## SUPERSEDED — DO NOT CITE THESE NUMBERS
+>
+> This report describes a study over 99 NSE symbols spanning 2007-09-17 → 2024-12-31.
+> **That dataset is not present in this repository and these figures cannot be
+> reproduced from anything committed here.** A later audit found no market data on
+> disk at all before `scripts/acquire_data.py` was written and run.
+>
+> The authoritative, reproducible research status is
+> **[RESEARCH_VALIDATION.md](RESEARCH_VALIDATION.md)**, computed over 108 symbols and
+> 362,697 observations from 2012-01-02 → 2026-09-03, with its manifests
+> (`backend/research_data/manifest.json`, `data_audit.json`, `study_result.json`)
+> tracked in git and regenerable via the scripts named there.
+>
+> Kept for history — a superseded report is evidence of what was believed at the time.
+> It is not evidence about the strategy.
+
+---
+
 # AlgoDollar — Real Data Validation Report
 
 **Phase:** real Indian market-data validation, following the engineering audit in `AUDIT_REPORT.md`.

@@ -10,46 +10,76 @@
 
 ---
 
-## Current status: NO STRATEGY VALIDATED
+## Current status: NOT VALIDATED — live trading is BLOCKED
 
-The research has now been run on **19 years of real NSE data** (99 symbols, 2007–2024).
-Ten candidates — eight rule-based baselines and two machine-learning models — were tested
-under purged walk-forward validation with realistic costs.
+Research was run on **real NSE daily data**: 108 symbols, 362,697 observations,
+3,623 sessions, 2012-01-02 → 2026-09-03, benchmarked against `^NSEI`.
 
-**None reached statistical significance.** The leading candidate was then evaluated once on
-a final holdout reserved from every selection decision, and **lost to a passive
-equal-weight portfolio of the same stocks**:
+Six textbook baselines (parameters fixed before any result was seen) were evaluated under
+purged, embargoed walk-forward, with selection done inside each fold on training data only.
 
-| | Development (2007–2021) | Final holdout (2022–2024) |
-|---|---:|---:|
-| Excess vs equal-weight | +4.35%/yr | **−0.61%/yr** |
-| Sharpe | +0.421 | **−0.067** |
-| Deflated Sharpe Ratio | 0.461 | **0.045** |
+| Out-of-sample (stitched test windows) | |
+|---|---:|
+| Sharpe (net of 25bps/side) | **1.256** |
+| CAGR | 16.84% |
+| Benchmark CAGR | 12.03% |
+| Excess | **+4.81%** |
+| Deflated Sharpe Ratio (6 trials) | 0.9982 |
+| Probability of Backtest Overfitting | 0.014 |
+| Bootstrap Sharpe 90% CI | [0.68, 1.89] |
+
+**Seven of eight acceptance criteria pass. The eighth fails, and it is decisive.**
+
+| Criterion | Observed | Threshold | |
+|---|---:|---:|---|
+| OOS Sharpe | 1.2559 | ≥ 0.50 | PASS |
+| Bootstrap 5th percentile | 0.6836 | > 0 | PASS |
+| Deflated Sharpe Ratio | 0.9982 | ≥ 0.95 | PASS |
+| PBO | 0.0143 | ≤ 0.50 | PASS |
+| Excess CAGR vs benchmark | +4.81% | > 0 | PASS |
+| Survives 50bps costs | 1.1119 | ≥ 0.50 | PASS |
+| Positive excess years | 76.9% | ≥ 55% | PASS |
+| **Point-in-time universe** | **present-day snapshot** | point-in-time | **FAIL** |
+
+The universe is a present-day NIFTY 500 snapshot, so it contains **no company that failed**.
+A probe of 16 known Indian corporate failures found **13 reachable from the same vendor**
+with full history — RCOM −98.9%, GTLINFRA −87.2%, RELINFRA −81.1%, UNITECH −80.7%,
+JETAIRWAYS −80.2%. They are missing because of how the universe is built, not because the
+data is unavailable.
+
+The selected signal is low-volatility, which is *specifically* exposed to this: a company
+heading for insolvency is frequently calm right up until it is not. A statistically
+convincing result measured on a survivor-only universe is a convincing description of the
+bias.
+
+**Machine learning: REJECTED.** LightGBM out-of-sample Sharpe 0.809 against the baseline's
+1.256 (−0.447), mean cross-sectional IC 0.0084 decaying to 0.0004 in the most recent fold.
+It does not earn its complexity.
 
 | | Status |
 |---|---|
-| Production model selected | **None** |
-| Live trading eligibility | **BLOCKED_INSUFFICIENT_DATA** (1 of 23 gates passing) |
-| Long-term engine | **Unvalidatable** — no point-in-time fundamentals available |
-| Intraday engine | **Unvalidatable** — only ~60 days of granular history available |
-| Execution layer | **Unsafe** — 13 critical defects, never connected to a live broker |
+| Production model | **None** |
+| Live trading | **BLOCKED_INSUFFICIENT_DATA** — 22 of 31 gates failing |
+| Paper trading | **Working end to end** (see below) |
+| Long-term sleeve | **Unvalidatable** — no point-in-time fundamentals |
+| Intraday sleeve | **Unvalidatable** — daily bars only, no intraday feed |
 
-Full evidence: **[docs/REAL_DATA_VALIDATION_REPORT.md](docs/REAL_DATA_VALIDATION_REPORT.md)**
+Full evidence: **[docs/RESEARCH_VALIDATION.md](docs/RESEARCH_VALIDATION.md)**
 
-An adversarial self-audit found and fixed a large number of defects, several of which would
-have lost money in production — regime detection that had no effect on allocation, user risk
-caps that did not bind, an intraday book that would never have squared off on a UTC server,
-and long-term buy/sell decisions driven by an unseeded random number generator. The audit
-also found that the original test suite imported **zero** production modules and therefore
-verified nothing.
+### What *is* verified
 
-Read **[docs/AUDIT_REPORT.md](docs/AUDIT_REPORT.md)** before trusting anything here, and in
-particular before interpreting any performance number this codebase produces.
+Paper trading runs end to end through the production dependency graph: market data → signal
+→ allocation → risk → eligibility → order manager → broker → persistence → reconciliation →
+API → frontend. Restart, idempotency, reconciliation, the kill switch and every risk gate are
+covered by tests that assert refusals, not just successes.
 
-What the audit *did* verify is that the machinery behaves correctly on data with known
-ground truth: the feature layer is free of look-ahead, the backtester does not manufacture
-edge from noise, and the multiple-testing controls correctly reject a strategy showing a
-1.89 Sharpe ratio that was cherry-picked from 1000 attempts on pure noise.
+Earlier adversarial audits found and fixed defects that would have lost money — regime
+detection that had no effect on allocation, user risk caps that did not bind, an intraday
+book that would never have squared off on a UTC server, long-term decisions driven by an
+unseeded RNG, and an original test suite that imported **zero** production modules.
+
+Read **[docs/AUDIT_REPORT.md](docs/AUDIT_REPORT.md)** before interpreting any number this
+codebase produces.
 
 ---
 
@@ -206,6 +236,70 @@ Live trading requires ALL of the following to be explicitly configured:
 5. Daily token refresh: GET `/api/v1/auth/kite/login` -> follow Kite login -> token stored automatically
 
 See [docs/zerodha_setup.md](docs/zerodha_setup.md) for full instructions.
+
+---
+
+## Running paper trading
+
+Paper is the default and is the only mode that runs without an explicit opt-in.
+
+```bash
+# 1. Configuration — no credentials are needed for paper.
+cp .env.example .env            # set POSTGRES_PASSWORD and REDIS_PASSWORD
+                                # TRADING_MODE defaults to "paper"; leave it.
+
+# 2. Bring up Postgres, Redis, backend and frontend.
+docker compose up -d
+docker compose ps               # every service should report healthy
+
+# 3. Confirm the system came up able to trade.
+curl -s localhost:8000/api/v1/health | jq
+```
+
+Startup runs reconciliation **before** trading is permitted. If it does not reach
+`RECONCILIATION_OK`, the service still starts and every order is refused with an audited
+reason — a stack that exists but declines to trade is far more diagnosable than a missing
+one.
+
+```bash
+# 4. Run one signal cycle. Dry run first: this produces the target and every
+#    reason without submitting anything.
+curl -s -X POST localhost:8000/api/v1/allocation/rebalance \
+  -H 'Content-Type: application/json' \
+  -d '{"total_capital": 1000000, "dry_run": true}' | jq
+
+# 5. Ask why nothing traded. This is the endpoint that matters.
+curl -s 'localhost:8000/api/v1/audit?rejected_only=true' | jq '.entries[].headline'
+```
+
+Which answers with the specific gate, never with an absence:
+
+```
+"RELIANCE BUY x10 rejected — daily risk limit"
+"RELIANCE SELL x40 rejected by broker — short selling is not supported"
+"RELIANCE BUY x5 blocked — kill switch engaged"
+```
+
+The dashboard at `localhost:3000` shows the same feed above the charts, because when
+nothing is trading the first question is *why*, and an empty P&L chart cannot answer it.
+
+### Expect NO TRADE
+
+With no validated alpha model the swing sleeve scores on its 12-1 momentum prior, whose
+expected 5-day return tops out near 20bps against a 40bps threshold set to clear the ~34bps
+round-trip cost. **It correctly proposes nothing.** That is the strategy declining a
+negative expected net return, not a malfunction — see
+[docs/RESEARCH_VALIDATION.md](docs/RESEARCH_VALIDATION.md).
+
+### Data for research
+
+```bash
+cd backend
+python scripts/acquire_data.py --symbols 120 --start 2012-01-01   # ~17MB, not committed
+python scripts/audit_data.py          # integrity report + machine-readable manifest
+python scripts/probe_survivorship.py  # measures the survivorship gap
+python scripts/run_research.py        # walk-forward study -> VALIDATED / NOT VALIDATED
+```
 
 ---
 
