@@ -20,7 +20,7 @@
     "numeral": "^2.0.6",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "recharts": "^2.13.0",
+    "recharts": "^3.10.1",
     "tailwind-merge": "^2.5.0",
     "zustand": "^5.0.0"
   },
