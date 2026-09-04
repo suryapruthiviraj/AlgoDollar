@@ -1,0 +1,405 @@
+{
+  "n_obs": 3088,
+  "period": [
+    "2014-01-29",
+    "2026-09-03"
+  ],
+  "factor": {
+    "raw_cagr": 0.1891,
+    "benchmark_cagr": 0.1188,
+    "excess_cagr": 0.0703,
+    "market_beta": 0.8764,
+    "market_alpha_annual": 0.0823,
+    "correlation_to_benchmark": 0.7288,
+    "beta_adjusted_cagr": -0.0087,
+    "r2_market_only": 0.5311,
+    "r2_all_factors": 0.6989,
+    "loadings": {
+      "MKT": 0.7989,
+      "MOM": 0.4746,
+      "LOWVOL": -0.4061,
+      "REV": 0.0365,
+      "ILLIQ": 0.4447
+    },
+    "residual_alpha_annual": 0.0234,
+    "residual_sharpe": -0.0,
+    "value_factor": "NOT TESTED \u2014 no point-in-time fundamentals exist"
+  },
+  "turnover": {
+    "annual_total": 11.3,
+    "annual_entries": 5.68,
+    "annual_exits": 5.61,
+    "mean_names_added_per_rebalance": 21.48,
+    "mean_names_dropped_per_rebalance": 21.23,
+    "mean_names_resized_per_rebalance": 156.85,
+    "mean_positions": 167.39,
+    "note": "Turnover is measured on the DELTA of weights, both sides. A name kept but re-weighted still trades, which is why turnover far exceeds the number of names entering and leaving."
+  },
+  "cost_sensitivity": {
+    "1x (25bps)": {
+      "sharpe": 1.1695,
+      "cagr": 0.2431,
+      "excess_cagr": 0.1207
+    },
+    "2x (50bps)": {
+      "sharpe": 1.0115,
+      "cagr": 0.2038,
+      "excess_cagr": 0.0814
+    },
+    "5x (125bps)": {
+      "sharpe": 0.5374,
+      "cagr": 0.0931,
+      "excess_cagr": -0.0293
+    },
+    "10x (250bps)": {
+      "sharpe": -0.2393,
+      "cagr": -0.0697,
+      "excess_cagr": -0.1922
+    },
+    "actual (25bps)": {
+      "sharpe": 1.1695,
+      "cagr": 0.2431,
+      "excess_cagr": 0.1207
+    }
+  },
+  "drawdown": {
+    "max": -0.3755,
+    "peak_date": "2018-08-31",
+    "trough_date": "2020-03-23",
+    "duration_sessions": 378,
+    "recovery_date": "2020-08-21",
+    "recovery_sessions": 102,
+    "benchmark_return_over_same_window": -0.3483,
+    "strategy_return_over_same_window": -0.3742,
+    "beta_during_drawdown": 0.8334,
+    "full_period_beta": 0.8764
+  },
+  "yearly": [
+    {
+      "year": 2014,
+      "strategy": 0.2944,
+      "benchmark": 0.384,
+      "excess": -0.0896,
+      "sharpe": 3.561,
+      "drawdown": -0.0259,
+      "sessions": 219
+    },
+    {
+      "year": 2015,
+      "strategy": 0.032,
+      "benchmark": -0.0406,
+      "excess": 0.0726,
+      "sharpe": 0.266,
+      "drawdown": -0.1776,
+      "sessions": 244
+    },
+    {
+      "year": 2016,
+      "strategy": -0.0305,
+      "benchmark": 0.0229,
+      "excess": -0.0534,
+      "sharpe": -0.025,
+      "drawdown": -0.2733,
+      "sessions": 242
+    },
+    {
+      "year": 2017,
+      "strategy": 0.4272,
+      "benchmark": 0.2865,
+      "excess": 0.1407,
+      "sharpe": 3.656,
+      "drawdown": -0.05,
+      "sessions": 248
+    },
+    {
+      "year": 2018,
+      "strategy": -0.0757,
+      "benchmark": 0.0296,
+      "excess": -0.1053,
+      "sharpe": -0.564,
+      "drawdown": -0.1599,
+      "sessions": 243
+    },
+    {
+      "year": 2019,
+      "strategy": 0.0199,
+      "benchmark": 0.1202,
+      "excess": -0.1003,
+      "sharpe": 0.234,
+      "drawdown": -0.101,
+      "sessions": 241
+    },
+    {
+      "year": 2020,
+      "strategy": 0.2943,
+      "benchmark": 0.1599,
+      "excess": 0.1344,
+      "sharpe": 1.12,
+      "drawdown": -0.3377,
+      "sessions": 248
+    },
+    {
+      "year": 2021,
+      "strategy": 0.8384,
+      "benchmark": 0.2412,
+      "excess": 0.5972,
+      "sharpe": 3.283,
+      "drawdown": -0.0786,
+      "sessions": 248
+    },
+    {
+      "year": 2022,
+      "strategy": -0.0203,
+      "benchmark": 0.0225,
+      "excess": -0.0427,
+      "sharpe": 0.047,
+      "drawdown": -0.2945,
+      "sessions": 246
+    },
+    {
+      "year": 2023,
+      "strategy": 0.7074,
+      "benchmark": 0.2003,
+      "excess": 0.5071,
+      "sharpe": 3.573,
+      "drawdown": -0.1153,
+      "sessions": 245
+    },
+    {
+      "year": 2024,
+      "strategy": 0.2105,
+      "benchmark": 0.0811,
+      "excess": 0.1294,
+      "sharpe": 0.948,
+      "drawdown": -0.1462,
+      "sessions": 244
+    },
+    {
+      "year": 2025,
+      "strategy": -0.069,
+      "benchmark": 0.1051,
+      "excess": -0.1741,
+      "sharpe": -0.266,
+      "drawdown": -0.2676,
+      "sessions": 249
+    },
+    {
+      "year": 2026,
+      "strategy": 0.0618,
+      "benchmark": -0.0739,
+      "excess": 0.1357,
+      "sharpe": 0.557,
+      "drawdown": -0.1391,
+      "sessions": 162
+    }
+  ],
+  "positive_excess_years": "7/13",
+  "regimes": {
+    "bull": {
+      "days": 1065,
+      "sharpe": 2.092,
+      "mean_daily": 0.0014,
+      "benchmark_mean_daily": 0.001248,
+      "sharpe_ci90": [
+        1.3959,
+        2.9278
+      ]
+    },
+    "bear": {
+      "days": 170,
+      "sharpe": -2.149,
+      "mean_daily": -0.003454,
+      "benchmark_mean_daily": -0.002042,
+      "sharpe_ci90": [
+        -4.3836,
+        0.2232
+      ]
+    },
+    "sideways": {
+      "days": 1785,
+      "sharpe": 0.964,
+      "mean_daily": 0.000661,
+      "benchmark_mean_daily": 0.000251,
+      "sharpe_ci90": [
+        0.2551,
+        1.6458
+      ]
+    },
+    "high_vol": {
+      "days": 1414,
+      "sharpe": 1.076,
+      "mean_daily": 0.000951,
+      "benchmark_mean_daily": 0.000728,
+      "sharpe_ci90": [
+        0.3598,
+        1.926
+      ]
+    },
+    "low_vol": {
+      "days": 1517,
+      "sharpe": 0.738,
+      "mean_daily": 0.000488,
+      "benchmark_mean_daily": 0.000132,
+      "sharpe_ci90": [
+        -0.0247,
+        1.54
+      ]
+    }
+  },
+  "recency": {
+    "first_half": {
+      "period": [
+        "2014-01-29",
+        "2020-06-03"
+      ],
+      "sharpe": 0.49,
+      "cagr": 0.0721
+    },
+    "second_half": {
+      "period": [
+        "2020-06-04",
+        "2026-09-03"
+      ],
+      "sharpe": 1.429,
+      "cagr": 0.319
+    },
+    "thirds": [
+      {
+        "period": [
+          "2014-01-29",
+          "2018-04-24"
+        ],
+        "sharpe": 0.979,
+        "cagr": 0.1581
+      },
+      {
+        "period": [
+          "2018-04-25",
+          "2022-06-27"
+        ],
+        "sharpe": 0.879,
+        "cagr": 0.1758
+      },
+      {
+        "period": [
+          "2022-06-28",
+          "2026-09-03"
+        ],
+        "sharpe": 1.155,
+        "cagr": 0.2349
+      }
+    ],
+    "rolling_252d_sharpe": {
+      "min": -1.551,
+      "median": 0.741,
+      "max": 4.831,
+      "pct_windows_below_zero": 0.2595
+    },
+    "last_252_sessions": {
+      "sharpe": 0.789,
+      "cagr": 0.1344
+    },
+    "last_504_sessions": {
+      "sharpe": -0.05,
+      "cagr": -0.0286
+    },
+    "fold_test_sharpes": [
+      {
+        "window": "2014-01-27..2016-03-10",
+        "selected": "trend_50_200",
+        "test_sharpe": 0.3766
+      },
+      {
+        "window": "2016-03-11..2018-04-19",
+        "selected": "low_volatility",
+        "test_sharpe": 2.2364
+      },
+      {
+        "window": "2018-04-20..2020-06-05",
+        "selected": "low_volatility",
+        "test_sharpe": -0.2715
+      },
+      {
+        "window": "2020-06-08..2022-07-05",
+        "selected": "vol_scaled_momentum",
+        "test_sharpe": 1.8848
+      },
+      {
+        "window": "2022-07-06..2024-08-16",
+        "selected": "vol_scaled_momentum",
+        "test_sharpe": 2.298
+      },
+      {
+        "window": "2024-08-19..2026-09-03",
+        "selected": "vol_scaled_momentum",
+        "test_sharpe": -0.0704
+      }
+    ]
+  },
+  "concentration_days": {
+    "baseline": {
+      "sharpe": 0.9988,
+      "cagr": 0.1891
+    },
+    "drop_top_1_days": {
+      "sharpe": 0.9777,
+      "cagr": 0.1837,
+      "excess_cagr": 0.0725
+    },
+    "drop_top_5_days": {
+      "sharpe": 0.8992,
+      "cagr": 0.1642,
+      "excess_cagr": 0.0644
+    },
+    "drop_top_10_days": {
+      "sharpe": 0.8131,
+      "cagr": 0.144,
+      "excess_cagr": 0.0588
+    },
+    "drop_top_25_days": {
+      "sharpe": 0.5901,
+      "cagr": 0.0955,
+      "excess_cagr": 0.0392
+    }
+  },
+  "concentration_names": {
+    "baseline": {
+      "sharpe": 1.1695,
+      "cagr": 0.2431,
+      "excess_cagr": 0.1207
+    },
+    "top_contributors": [
+      "TVSMOTOR",
+      "WELSPUNLIV",
+      "SRF",
+      "MARKSANS",
+      "AUROPHARMA",
+      "UNOMINDA",
+      "TATAELXSI",
+      "BAJFINANCE",
+      "CGPOWER",
+      "ESCORTS"
+    ],
+    "drop_top_1_names": {
+      "sharpe": 1.1619,
+      "cagr": 0.2415,
+      "excess_cagr": 0.1191
+    },
+    "drop_top_5_names": {
+      "sharpe": 1.1297,
+      "cagr": 0.2331,
+      "excess_cagr": 0.1107
+    },
+    "drop_top_10_names": {
+      "sharpe": 1.0715,
+      "cagr": 0.2189,
+      "excess_cagr": 0.0964
+    },
+    "drop_top_25_names": {
+      "sharpe": 0.91,
+      "cagr": 0.1791,
+      "excess_cagr": 0.0567
+    }
+  },
+  "selected_signal": "vol_scaled_momentum"
+}
