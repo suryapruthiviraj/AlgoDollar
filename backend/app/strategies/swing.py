@@ -308,13 +308,17 @@ class SwingStrategy(BaseStrategy):
                 stop_loss_pct=stop_loss_pct,
                 target_pct=target_pct,
                 holding_period_days=self.horizon_days,
+                # `sector` moved to metadata: feature_snapshot is
+                # Dict[str, float] and every reader of it treats the values as
+                # numbers (realized_vol_21d, rank). A string label was the odd
+                # one out and nothing ever read it back from here.
                 feature_snapshot={
                     "rank": float(row["rank"]),
                     "raw_score": gross_ret,
                     "realized_vol_21d": realized_vol,
-                    "sector": sector,
                 },
                 metadata={
+                    "sector": sector,
                     "regime": regime or "UNKNOWN",
                     "return_units": f"simple_return_over_{self.horizon_days}_trading_days",
                     "score_source": str(row.get("score_source", "unknown")),
@@ -472,7 +476,7 @@ class SwingStrategy(BaseStrategy):
         if current_rank is not None:
             entry_signal = position.get("signal")
             entry_rank_val = 0.5
-            if hasattr(entry_signal, "feature_snapshot"):
+            if entry_signal is not None and hasattr(entry_signal, "feature_snapshot"):
                 entry_rank_val = float(
                     entry_signal.feature_snapshot.get("rank", 0.5) or 0.5
                 )

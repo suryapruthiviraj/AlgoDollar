@@ -700,7 +700,24 @@ class ReconciliationEngine:
             )
             snap.unavailable.append(name)
             return None
-        return list(value) if expected_type is list else dict(value)
+        # Narrowed against the concrete types rather than the `expected_type`
+        # variable: isinstance(x, some_variable) tells mypy nothing, so `value`
+        # stayed `object` here. The guard above already established which one
+        # it is, so these branches are checks, not casts.
+        if isinstance(value, list):
+            return list(value)
+        if isinstance(value, dict):
+            return dict(value)
+        # expected_type is only ever list or dict today. If a caller ever passes
+        # something else, treat it as UNAVAILABLE rather than handing back an
+        # object the comparison steps cannot interpret — the whole point of this
+        # helper is that an unusable broker response never reads as agreement.
+        logger.error(
+            "UNAVAILABLE: %s expected list or dict, got %s",
+            name, type(value).__name__,
+        )
+        snap.unavailable.append(name)
+        return None
 
     # ------------------------------------------------------------------ #
     #  Step 2 — orders                                                     #

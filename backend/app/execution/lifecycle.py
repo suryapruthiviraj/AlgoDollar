@@ -32,7 +32,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Optional, Protocol, runtime_checkable
+from typing import Any, Optional, Protocol, cast, runtime_checkable
 
 logger = logging.getLogger(__name__)
 
@@ -621,13 +621,24 @@ class RedisOrderStore:
         except Exception as exc:
             raise PersistenceError(f"order write failed: {exc}") from exc
 
-    async def _iter_keys(self, pattern: str) -> list[str]:
+    async def _iter_keys(self, pattern: str) -> list[str | bytes]:
+        # redis-py returns bytes unless the client was built with
+        # decode_responses=True, so the honest element type is str | bytes.
+        # list_open() below is what decodes; do not narrow this to str.
         if hasattr(self._c, "scan_iter"):
-            out = []
-            it = self._c.scan_iter(match=pattern)
+            out: list[str | bytes] = []
+            # The redis client is duck-typed (validated by hasattr in
+            # __init__), so its scan_iter yields untyped keys. Naming that
+            # explicitly is honest; pretending they are `str` is not, since
+            # redis-py hands back bytes unless decode_responses=True.
+            it: Any = self._c.scan_iter(match=pattern)
             if inspect.isasyncgen(it):
+                # `isasyncgen` is a TypeGuard for AsyncGenerator[object, object]
+                # — it cannot know the yield type — so `k` narrows to `object`
+                # here even though `it` was Any. The cast restates what redis
+                # actually yields rather than widening `out` to swallow it.
                 async for k in it:                      # pragma: no cover
-                    out.append(k)
+                    out.append(cast("str | bytes", k))
             else:
                 for k in it:
                     out.append(k)
@@ -681,7 +692,10 @@ class RedisOrderStore:
         key = self._pos_key(symbol, exchange, product)
         try:
             raw = await _maybe_await(self._c.get(key))
-            pos = json.loads(raw) if raw else {
+            # Without the annotation the fallback literal infers
+            # dict[str, object], which makes the arithmetic below untypeable
+            # (and therefore unchecked) rather than merely permissive.
+            pos: dict[str, Any] = json.loads(raw) if raw else {
                 "symbol": symbol, "exchange": exchange, "product": product,
                 "quantity": 0, "average_price": 0.0,
             }

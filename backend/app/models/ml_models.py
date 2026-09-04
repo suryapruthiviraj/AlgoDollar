@@ -46,7 +46,8 @@ import math
 import warnings
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from types import ModuleType
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -70,14 +71,25 @@ except ImportError:
 # If that module is not present we fall back to the inline embargoed splitter
 # below (which is intentionally minimal: chronological + embargo, no purge of
 # train labels that straddle the fold boundary from the *left*).
+_research_validation: Optional[ModuleType]
 try:  # pragma: no cover - depends on a module owned by another workstream
     from app.research import validation as _research_validation
     _HAS_RESEARCH_VALIDATION = True
 except Exception:  # ImportError or anything raised at import time
+    # Declared Optional above: the success branch binds a module and this branch
+    # binds None, so without the declaration the name is pinned to Module and
+    # the fallback — the entire point of this try/except — is a type error.
     _research_validation = None
     _HAS_RESEARCH_VALIDATION = False
 
 logger = logging.getLogger(__name__)
+
+#: The date axis of a panel. Callers pass either a Python sequence or a numpy
+#: array of datetime64/object dtype. `np.ndarray` does NOT register as a
+#: `typing.Sequence` — it supports len/getitem/iteration but never inherits
+#: from it — so annotating these parameters `Sequence[Any]` described something
+#: no caller in this module actually passes.
+DateVector = Union[Sequence[Any], np.ndarray]
 
 DEFAULT_PERIODS_PER_YEAR = 252
 _EULER_GAMMA = 0.5772156649015329
@@ -131,7 +143,7 @@ class ICResult:
         )
 
 
-def _group_slices(dates: Sequence[Any]) -> List[Tuple[Any, np.ndarray]]:
+def _group_slices(dates: DateVector) -> List[Tuple[Any, np.ndarray]]:
     """Return [(date, row_indices), …] grouped by date, in sorted date order."""
     arr = np.asarray(dates)
     if arr.ndim != 1:
@@ -152,7 +164,7 @@ def _group_slices(dates: Sequence[Any]) -> List[Tuple[Any, np.ndarray]]:
 def cross_sectional_ic_series(
     y_pred: np.ndarray,
     y_true: np.ndarray,
-    dates: Sequence[Any],
+    dates: DateVector,
     min_names_per_date: int = 5,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
@@ -192,7 +204,7 @@ def cross_sectional_ic_series(
 def information_coefficient(
     y_pred: np.ndarray,
     y_true: np.ndarray,
-    dates: Sequence[Any],
+    dates: DateVector,
     *,
     label_horizon: int = 1,
     periods_per_year: int = DEFAULT_PERIODS_PER_YEAR,
@@ -254,7 +266,7 @@ def information_coefficient(
 def _information_coefficient(
     y_pred: np.ndarray,
     y_true: np.ndarray,
-    dates: Sequence[Any],
+    dates: DateVector,
     **kwargs: Any,
 ) -> float:
     """
@@ -337,7 +349,7 @@ class LongShortResult:
 def long_short_returns(
     y_pred: np.ndarray,
     y_true: np.ndarray,
-    dates: Sequence[Any],
+    dates: DateVector,
     top_pct: float = 0.2,
     bot_pct: float = 0.2,
     min_names_per_date: int = 5,
@@ -368,7 +380,7 @@ def long_short_returns(
 def long_short_sharpe(
     y_pred: np.ndarray,
     y_true: np.ndarray,
-    dates: Sequence[Any],
+    dates: DateVector,
     *,
     top_pct: float = 0.2,
     bot_pct: float = 0.2,
@@ -566,7 +578,7 @@ def _embargoed_time_series_splits(
     n_samples: int,
     n_splits: int = 5,
     embargo: int = 1,
-    dates: Optional[Sequence[Any]] = None,
+    dates: Optional[DateVector] = None,
 ) -> List[Tuple[np.ndarray, np.ndarray]]:
     """
     Chronological expanding-window splits with an embargo — never KFold.
@@ -635,7 +647,7 @@ def _try_research_validation_splits(
     n_samples: int,
     n_splits: int,
     embargo: int,
-    dates: Optional[Sequence[Any]],
+    dates: Optional[DateVector],
 ) -> Optional[List[Tuple[np.ndarray, np.ndarray]]]:
     """
     Best-effort adapter to `app.research.validation` (owned by another engineer).
@@ -692,6 +704,16 @@ class AlphaModelBase(ABC):
     model_name: str = "base"
     version: str = "0.1.0"
 
+    # Declared here, not inferred. `_record_val_ic` sets `_val_ic` to a float in
+    # one branch and `_val_ic_pooled` to None in another, so inference from that
+    # method alone pinned these to `float` — and each subclass's `Optional`
+    # re-declaration then looked like an illegal override. They are genuinely
+    # optional: None means "validation IC was never computed", which is NOT the
+    # same as an IC of 0.0 and must stay distinguishable.
+    _val_ic: Optional[float] = None
+    _val_ic_result: Optional[ICResult] = None
+    _val_ic_pooled: Optional[float] = None
+
     @abstractmethod
     def fit(
         self,
@@ -741,7 +763,7 @@ class AlphaModelBase(ABC):
         self,
         preds: np.ndarray,
         y_val: np.ndarray,
-        dates_val: Optional[Sequence[Any]],
+        dates_val: Optional[DateVector],
         label_horizon: int = 1,
         periods_per_year: int = DEFAULT_PERIODS_PER_YEAR,
     ) -> Optional[ICResult]:
@@ -821,9 +843,9 @@ class LinearAlphaModel(AlphaModelBase):
         self._scaler: Optional[StandardScaler] = None
         self._model: Optional[RidgeCV] = None
         self._feature_names: List[str] = []
-        self._val_ic: Optional[float] = None
-        self._val_ic_result: Optional[ICResult] = None
-        self._val_ic_pooled: Optional[float] = None
+        self._val_ic = None
+        self._val_ic_result = None
+        self._val_ic_pooled = None
         self._cv_splits: List[Tuple[np.ndarray, np.ndarray]] = []
 
     def fit(
@@ -892,7 +914,12 @@ class LinearAlphaModel(AlphaModelBase):
         return self
 
     def predict(self, X: np.ndarray) -> np.ndarray:
-        assert self._model is not None, "Model not fitted."
+        # A real raise, not `assert`: asserts are stripped under `python -O`, and
+        # this guard is what stops an unfitted model being asked for predictions.
+        # The scaler was previously unchecked, so calling predict() before fit()
+        # died on `None.transform` instead of saying what was actually wrong.
+        if self._model is None or self._scaler is None:
+            raise RuntimeError(f"{self.model_name}: predict() called before fit().")
         X_scaled = self._scaler.transform(X)
         preds = self._model.predict(X_scaled)
         return preds
@@ -975,9 +1002,9 @@ class GBMAlphaModel(AlphaModelBase):
         self._model: Optional[lgb.LGBMRegressor] = None
         self._feature_names: List[str] = []
         self._best_iteration: int = 0
-        self._val_ic: Optional[float] = None
-        self._val_ic_result: Optional[ICResult] = None
-        self._val_ic_pooled: Optional[float] = None
+        self._val_ic = None
+        self._val_ic_result = None
+        self._val_ic_pooled = None
 
     def fit(
         self,
@@ -1015,7 +1042,10 @@ class GBMAlphaModel(AlphaModelBase):
         self._best_iteration = self._model.best_iteration_ or self._params["n_estimators"]
 
         if len(X_v) >= 10:
-            preds = self._model.predict(X_v)
+            # np.asarray: LightGBM's predict() is declared to return
+            # ndarray | Any | list, and everything downstream indexes it as an
+            # array. Normalise once rather than widen the callee signatures.
+            preds = np.asarray(self._model.predict(X_v))
             d_val = np.asarray(dates_val)[mask_val] if dates_val is not None else None
             logger.info(
                 "%s — best_iter: %d", self.model_name, self._best_iteration
@@ -1028,8 +1058,11 @@ class GBMAlphaModel(AlphaModelBase):
         return self
 
     def predict(self, X: np.ndarray) -> np.ndarray:
-        assert self._model is not None, "Model not fitted."
-        return self._model.predict(X)
+        # A real raise, not `assert`: asserts vanish under `python -O`, and this
+        # is the guard that stops an unfitted model being asked for predictions.
+        if self._model is None:
+            raise RuntimeError(f"{self.model_name}: predict() called before fit().")
+        return np.asarray(self._model.predict(X))
 
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
         """Sigmoid of z-scored continuous predictions."""
@@ -1133,7 +1166,7 @@ class ModelCompetition:
 
     @staticmethod
     def _directional_accuracy(
-        preds: np.ndarray, y: np.ndarray, dates: Optional[Sequence[Any]]
+        preds: np.ndarray, y: np.ndarray, dates: Optional[DateVector]
     ) -> float:
         """
         Fraction of names whose predicted direction matched the realised one.
@@ -1165,9 +1198,9 @@ class ModelCompetition:
         y_val: np.ndarray,
         X_test: np.ndarray,
         y_test: np.ndarray,
-        dates_train: Sequence[Any],
-        dates_val: Sequence[Any],
-        dates_test: Sequence[Any],
+        dates_train: DateVector,
+        dates_val: DateVector,
+        dates_test: DateVector,
         feature_names: Optional[List[str]] = None,
         label_horizon: int = 1,
         periods_per_year: int = DEFAULT_PERIODS_PER_YEAR,
@@ -1285,11 +1318,16 @@ class ModelCompetition:
         the embargo used inside each model's internal CV and deflates the
         effective sample size for every reported t-statistic.
         """
-        missing = [
-            n for n, d in (("dates_train", dates_train), ("dates_val", dates_val),
-                           ("dates_test", dates_test)) if d is None
-        ]
-        if missing:
+        # Checked by name rather than via the comprehension alone: a list
+        # built inside a comprehension proves nothing to the type checker, so
+        # every later use still looked possibly-None. Same runtime behaviour,
+        # same message — the three explicit tests are what make the guarantee
+        # visible after this block.
+        if dates_train is None or dates_val is None or dates_test is None:
+            missing = [
+                n for n, d in (("dates_train", dates_train), ("dates_val", dates_val),
+                               ("dates_test", dates_test)) if d is None
+            ]
             raise ValueError(
                 f"{', '.join(missing)} must be supplied: model skill is CROSS-SECTIONAL "
                 "and cannot be measured without a date axis. Pooling a panel into one "

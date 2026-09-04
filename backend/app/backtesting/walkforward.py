@@ -340,17 +340,23 @@ class WalkForwardEngine:
         train_sharpe_dist = [w.train_sharpe for w in windows]
 
         # Parameter stability: how much do best_params vary across windows
-        all_keys = set()
+        all_keys: set[str] = set()
         for w in windows:
             all_keys.update(w.best_params.keys())
-        stability = {}
+        stability: dict[str, dict[str, Any]] = {}
         for k in all_keys:
-            vals = [w.best_params.get(k) for w in windows if w.best_params.get(k) is not None]
-            if vals and all(isinstance(v, (int, float)) for v in vals):
+            present = [w.best_params.get(k) for w in windows if w.best_params.get(k) is not None]
+            # Split rather than test-in-place: `all(isinstance(...))` inside an
+            # `if` does not narrow the list's element type, so numpy was being
+            # handed a list[Any | None] it cannot accept. Requiring the numeric
+            # list to be the same length keeps the original semantics exactly —
+            # stability is reported only when EVERY present value is numeric.
+            numeric = [v for v in present if isinstance(v, (int, float))]
+            if present and len(numeric) == len(present):
                 stability[k] = {
-                    "mean": float(np.mean(vals)),
-                    "std":  float(np.std(vals)),
-                    "values": vals,
+                    "mean": float(np.mean(numeric)),
+                    "std":  float(np.std(numeric)),
+                    "values": present,
                 }
 
         result = WalkForwardResult(

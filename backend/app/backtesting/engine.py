@@ -344,9 +344,13 @@ class EventDrivenBacktester:
 
             # Execute exits at next bar open
             for sym, reason in symbols_to_exit:
-                pos = positions.pop(sym, None)
-                if pos is None:
+                # Bound to its own name because `pos` is already inferred as
+                # _Position from the iteration above, which makes pop()'s None
+                # default look like a type error.
+                exiting = positions.pop(sym, None)
+                if exiting is None:
                     continue
+                pos = exiting
                 if sym not in prices_df.columns or pd.isna(
                     prices_df.loc[next_date, sym]
                 ):

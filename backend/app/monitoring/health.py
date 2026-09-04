@@ -200,8 +200,20 @@ class HealthMonitor:
 
         components: list[ComponentHealth] = []
         for check in checks:
-            if isinstance(check, Exception):
-                components.append(ComponentHealth("unknown", ComponentStatus.DOWN, str(check)))
+            # BaseException, not Exception. `return_exceptions=True` aggregates
+            # anything a child raised, and the individual checks only catch
+            # `Exception` themselves — so a CancelledError, MemoryError or
+            # KeyboardInterrupt escaping one of them arrives here. Testing for
+            # `Exception` let those fall into the `else` branch, where the raw
+            # exception object was appended to a list of ComponentHealth and
+            # the `c.status` aggregation below then died with AttributeError.
+            # A health monitor crashing instead of reporting DOWN is the worst
+            # possible failure mode for it, so every raised object is reported.
+            if isinstance(check, BaseException):
+                # CancelledError and friends stringify to "", which would make
+                # the DOWN entry unreadable; fall back to the exception type.
+                detail = str(check) or type(check).__name__
+                components.append(ComponentHealth("unknown", ComponentStatus.DOWN, detail))
             else:
                 components.append(check)
 

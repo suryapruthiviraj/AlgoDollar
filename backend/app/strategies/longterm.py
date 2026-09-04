@@ -145,7 +145,11 @@ class _MockFundamentalProvider:
         return int.from_bytes(digest, "big")
 
     @classmethod
-    def get_fundamentals(cls, symbol: str) -> Dict[str, float]:
+    # Dict[str, Any], not Dict[str, float]: this dict is genuinely
+    # heterogeneous. Alongside the numeric metrics it carries "sector", which
+    # line ~703 reads and passes to get_sector_medians(sector: str). The
+    # narrower annotation described a shape this function never returned.
+    def get_fundamentals(cls, symbol: str) -> Dict[str, Any]:
         warnings.warn(
             f"[MOCK DATA] Returning synthetic fundamentals for {symbol}. "
             "Do NOT use for real trading.",

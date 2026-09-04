@@ -19,7 +19,7 @@ from typing import Dict, List, Optional
 
 import joblib
 
-from app.models.ml_models import AlphaModelBase  # type: ignore
+from app.models.ml_models import AlphaModelBase
 
 logger = logging.getLogger(__name__)
 

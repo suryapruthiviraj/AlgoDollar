@@ -159,7 +159,15 @@ def create_app() -> FastAPI:
 
     # Rate limiting
     app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    # The ignore below is an upstream typing gap, not a real mismatch.
+    # Starlette types every handler as taking `Exception`, while slowapi's
+    # handler is declared to take the narrower `RateLimitExceeded`. Starlette
+    # dispatches by exception CLASS, so this handler can only ever be called
+    # with the type it is registered for — a contravariance Starlette's
+    # annotation cannot express. Scoped to this one call and one error code.
+    app.add_exception_handler(
+        RateLimitExceeded, _rate_limit_exceeded_handler  # type: ignore[arg-type]
+    )
 
     # CORS
     app.add_middleware(

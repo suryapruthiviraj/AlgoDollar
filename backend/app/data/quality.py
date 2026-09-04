@@ -431,7 +431,8 @@ def probe_survivorship(provider, control: str = "RELIANCE") -> Finding:
     missing data. It establishes only whether the bias is present, which is
     enough to determine how a result may be interpreted.
     """
-    missing, present = [], []
+    missing: list[str] = []
+    present: list[str] = []
     for sym, start, end in KNOWN_DELISTED_PROBES:
         df = provider.fetch_symbol(sym, start, end)
         (present if (df is not None and len(df) > 0) else missing).append(sym)

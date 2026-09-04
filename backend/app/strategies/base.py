@@ -504,7 +504,11 @@ class BaseStrategy(ABC):
         def _sharpe_degrades(level: float) -> bool:
             return _sharpe_significantly_below(sharpe_30, level, n_obs)
 
-        new_health = old_health
+        # Explicitly widened back to StrategyHealth: the early return above
+        # narrows `old_health` to "anything but DISABLED", and without this
+        # annotation that narrowing is inherited by `new_health`, so the
+        # transition INTO DISABLED below reads as an illegal assignment.
+        new_health: StrategyHealth = old_health
 
         # Disable (most severe)
         if _sharpe_degrades(t["disable"]["sharpe_30d"]) or dd > t["disable"]["drawdown"]:

@@ -36,7 +36,12 @@ from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
 from app.core.config import settings
-from app.execution.audit import AuditJournal, InMemoryAuditSink, JsonlAuditSink
+from app.execution.audit import (
+    AuditJournal,
+    AuditSink,
+    InMemoryAuditSink,
+    JsonlAuditSink,
+)
 from app.execution.lifecycle import InMemoryOrderStore
 from app.execution.order_manager import OrderManager
 from app.execution.reconciliation import ReconciliationEngine
@@ -181,7 +186,10 @@ async def build_execution_stack(
 
     store = kill_switch_store if kill_switch_store is not None else InMemoryKillSwitchStore()
 
-    sinks = [InMemoryAuditSink()]
+    # Annotated to the protocol: inference from the first element alone makes
+    # this list[InMemoryAuditSink], so appending the durable JSONL sink — the
+    # one that matters for an audit trail — looks like a type error.
+    sinks: list[AuditSink] = [InMemoryAuditSink()]
     if audit_path:
         sinks.append(JsonlAuditSink(audit_path))
     audit = AuditJournal(*sinks)

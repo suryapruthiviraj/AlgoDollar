@@ -4,6 +4,7 @@ import logging
 import sys
 
 import structlog
+import structlog.typing
 
 from app.core.config import settings
 
@@ -19,6 +20,12 @@ def setup_logging() -> None:
 
     is_dev = settings.app_env == "development"
 
+    # Annotated as the structlog processor protocol rather than left to
+    # inference: without it the variable's type is pinned to whichever
+    # renderer the first branch happens to construct, and the JSON branch —
+    # the one every non-development environment actually takes — then looks
+    # like a type error.
+    renderer: structlog.typing.Processor
     if is_dev:
         renderer = structlog.dev.ConsoleRenderer(colors=True)
     else:
