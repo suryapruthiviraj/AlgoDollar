@@ -211,19 +211,55 @@ jobs:
         working-directory: frontend
         run: |
           if [ ! -f package-lock.json ]; then
-            # `npm audit` needs a resolved dependency tree. With no committed
-            # lockfile, resolve one here — --package-lock-only writes the tree
-            # without installing anything — so the Node dependencies are really
-            # scanned instead of quietly skipped.
-            #
-            # --legacy-peer-deps is required, not cosmetic: next@15.0.0 declares
-            # peerDependencies.react as "^18.2.0 || 19.0.0-rc-65a56d0e-20241020",
-            # which excludes the stable react@19 that "^19.0.0" resolves to, so
-            # a plain resolve dies with ERESOLVE. frontend/Dockerfile carries
-            # the same flag for the same reason.
+            # `npm audit` needs a resolved dependency tree. package-lock.json IS
+            # committed now, so this branch does not normally run; it stays so
+            # that deleting the lockfile still gets the dependencies scanned
+            # rather than quietly skipped. --package-lock-only writes the tree
+            # without installing anything.
             npm install --package-lock-only --legacy-peer-deps --no-audit --no-fund
           fi
-          npm audit --audit-level=high
+
+          # "The registry was unreachable" and "your dependencies are
+          # vulnerable" are DIFFERENT ANSWERS and must not share an exit code.
+          # `npm audit` returns 1 for both, so a transient 503 from
+          # registry.npmjs.org (which is what broke this build) looked exactly
+          # like a high-severity finding.
+          #
+          # This is NOT `|| true` and NOT a lowered severity floor: a real
+          # finding still fails the job, at the same --audit-level=high. The
+          # only thing added is the ability to tell the two apart, plus a retry,
+          # because a service blip should not need a human to re-run CI.
+          attempt=1
+          max_attempts=3
+          while : ; do
+            set +e
+            output=$(npm audit --audit-level=high 2>&1)
+            status=$?
+            set -e
+
+            echo "$output"
+
+            if [ "$status" -eq 0 ]; then
+              echo "npm audit: no findings at or above high severity."
+              break
+            fi
+
+            # An infrastructure failure names the endpoint or an HTTP status;
+            # a real finding names vulnerabilities instead.
+            if echo "$output" | grep -qiE "audit endpoint returned an error|ENOTFOUND|ETIMEDOUT|ECONNRESET|Service Unavailable|socket hang up|5[0-9][0-9] "; then
+              if [ "$attempt" -lt "$max_attempts" ]; then
+                echo "::warning::npm audit could not reach the registry (attempt $attempt/$max_attempts); retrying in $((attempt * 15))s."
+                sleep $((attempt * 15))
+                attempt=$((attempt + 1))
+                continue
+              fi
+              echo "::error::NOT VERIFIED — npm audit could not reach registry.npmjs.org after $max_attempts attempts. This is an INFRASTRUCTURE failure, not a clean scan: the Node dependencies were NOT audited on this run. Re-run once the registry is reachable."
+              exit 1
+            fi
+
+            echo "::error::npm audit found vulnerabilities at or above high severity."
+            exit "$status"
+          done
 
       - name: Upload dependency audit report
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
