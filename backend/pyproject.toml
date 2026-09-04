@@ -67,6 +67,20 @@ test = [
     "pyarrow>=15.0",
 ]
 
+# Package discovery must be EXPLICIT. setuptools' flat-layout autodiscovery
+# treats every top-level directory as a candidate package, so adding
+# `research_data/` (acquired market data and its manifests) made the install
+# fail outright:
+#
+#   error: Multiple top-level packages discovered in a flat-layout:
+#          ['app', 'research_data']
+#
+# That broke `pip install -e .`, which broke Backend CI and Safety Gates
+# together. `app` is the only importable package here; `scripts/` and
+# `research_data/` are run and read from the repo, never imported.
+[tool.setuptools.packages.find]
+include = ["app*"]
+
 [tool.ruff]
 target-version = "py311"
 line-length = 99
