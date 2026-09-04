@@ -1256,16 +1256,14 @@ class FillGroup:
 
     @property
     def total_qty(self) -> int:
-        return sum(_int_of(f, "quantity") for f in self.fills)
+        return sum(_fill_qty(f) for f in self.fills)
 
     @property
     def vwap(self) -> float:
         total = self.total_qty
         if total == 0:
             return 0.0
-        notional = sum(
-            _int_of(f, "quantity") * _fill_price(f) for f in self.fills
-        )
+        notional = sum(_fill_qty(f) * _fill_price(f) for f in self.fills)
         return notional / total
 
 
@@ -1282,6 +1280,32 @@ def _group_fills(trades: Sequence[dict]) -> dict[str, FillGroup]:
             groups[oid] = g
         g.fills.append(dict(t))
     return groups
+
+
+def _fill_qty(fill: dict) -> int:
+    """
+    Quantity from a fill, whichever key the venue used.
+
+    BUG THIS FIXES: broker fills carry ``qty`` (PaperBroker and Kite both emit
+    that), while this module read ``quantity`` — the key the LOCAL store uses.
+    Every broker fill therefore counted as ZERO, so after any fill a restart
+    compared broker=0 against local=10 and reported a MISMATCH that was not
+    real. Reconciliation then latched the kill switch and the process could
+    never trade again.
+
+    It failed CLOSED, so nothing was ever at risk — but it made restart-
+    after-trading impossible, which is one of the properties reconciliation
+    exists to provide.
+
+    Aliases are matched in the same style as :func:`_fill_price`, so a venue
+    using either spelling reconciles correctly.
+    """
+    for key in ("quantity", "qty", "filled_quantity", "filled_qty"):
+        if key in fill:
+            v = _to_float(fill.get(key))
+            if v is not None:
+                return int(v)
+    return 0
 
 
 def _fill_price(fill: dict) -> float:
