@@ -81,6 +81,8 @@ Debian slim, not Alpine).
 5. **The `worker` service cannot run.** `backend/app/worker.py` does not exist
    and no Celery app is defined anywhere (`grep -rn "Celery(" backend/app` is
    empty). It is commented out in compose rather than left to crash-loop.
+   — **RESOLVED 2026-09-06**: `app/worker.py` now defines the Celery app and
+   the `worker` / `worker-beat` compose services are active.
 6. **`backend/pyproject.toml` has an invalid build backend**
    (`setuptools.backends.legacy:build`), so `pip install .` would fail. The
    image installs from the pinned `requirements.txt` instead and never needs it.

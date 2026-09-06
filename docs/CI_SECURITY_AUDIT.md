@@ -236,8 +236,8 @@ Stated rather than hidden.
 2. **`autobahn 19.11.2` (PYSEC-2020-25)** is transitive from `kiteconnect` and is not fixed. Not silenced.
 3. **2 npm vulnerabilities remain** (1 moderate `next`, 1 high `postcss`), both requiring a **Next 16 major upgrade**. The postcss issues are build-time and require attacker-controlled CSS, which this repository does not have. Deferred deliberately, not suppressed.
 4. **CI tests only in-memory implementations.** `SqlAlchemyLocalStateStore` is exercised against SQLite, not Postgres. `RedisOrderStore` is not exercised against real Redis at all — `InMemoryOrderStore` is used. True crash recovery is simulated by replaying persisted paper state, not by killing a process. **This is a real coverage gap, not fake coverage.**
-5. **No migration validation.** Alembic is a dependency but no migration is run in CI.
-6. **`worker` service cannot run** — `docker-compose.yml` references it but there is no `app/worker.py` and no Celery app.
+5. **No migration validation.** Alembic is a dependency but no migration is run in CI. — **RESOLVED 2026-09-06**: `backend/tests/test_migrations.py` (7 tests, incl. `alembic check`) + `apply_migrations`/`migration_status` in `app/database/session.py`; `create_all` dropped from boot.
+6. **`worker` service cannot run** — `docker-compose.yml` references it but there is no `app/worker.py` and no Celery app. — **RESOLVED 2026-09-06**: `backend/app/worker.py` defines `Celery("algodollar")` + beat schedule; compose runs `worker` + `worker-beat`; `backend/tests/test_celery_worker.py` (17 tests).
 7. **`docker.yml` builds the frontend with `NEXT_PUBLIC_API_URL=http://backend:8000`**, which Next inlines into the *browser* bundle where `backend` is unresolvable. Valid as a CI build check, not deployable as-is.
 8. **The live broker has never held a connection.** Everything in the Zerodha adapter remains verified by inspection and simulation only.
 
