@@ -97,7 +97,14 @@ WORKDIR /app
 
 # Only the application package. Tests, docs and tooling are excluded here and in
 # .dockerignore; the test suite is never present in, nor run from, this image.
+#
+# Alembic is NOT tooling we can exclude: `make migrate` runs
+# `alembic upgrade head` inside this container, and the app never creates its
+# own schema. Without the ini and the scripts the configured deployment flow
+# (docs/deployment.md: `alembic ... upgrade head` after review) cannot run.
 COPY --chown=appuser:appuser app/ ./app/
+COPY --chown=appuser:appuser alembic.ini ./
+COPY --chown=appuser:appuser migrations/ ./migrations/
 
 # docker-compose.yml mounts the `backend-logs` named volume at /app/logs. Docker
 # seeds a fresh named volume from the image path, so this directory must exist

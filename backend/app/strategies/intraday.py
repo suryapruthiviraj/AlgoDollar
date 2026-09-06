@@ -91,8 +91,11 @@ _BREADTH_THRESHOLD = 0.40
 # Maximum concurrent intraday positions
 _MAX_POSITIONS = 5
 
-# Per-position notional cap as a fraction of sleeve capital.
-_MAX_POSITION_PCT = 0.20
+# Per-position notional cap as a fraction of sleeve capital. Must agree with
+# the execution-layer's enforceable, single-stock cap
+# (settings.max_single_stock_pct = 0.10) or every fresh intraday entry is
+# rejected by the risk engine and sizing silently collapses to zero.
+_MAX_POSITION_PCT = 0.10
 
 # Rolling windows for intraday features (in bars; assumes 1-minute bars)
 _SHORT_BARS  = 5
@@ -356,7 +359,7 @@ class IntradayStrategy(BaseStrategy):
     def _raw_target_weight(self, signal: Signal) -> float:
         """
         Pre-normalisation weight: 0.5% of capital at risk per trade, capped at
-        _MAX_POSITION_PCT of the sleeve.
+        _MAX_POSITION_PCT (the single-stock cap the execution layer enforces).
         """
         stop_loss = signal.stop_loss_pct
         if stop_loss is None or not np.isfinite(stop_loss) or stop_loss <= 0:

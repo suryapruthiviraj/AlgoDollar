@@ -1218,8 +1218,19 @@ def test_REGRESSION_the_app_routes_orders_through_the_execution_layer():
     main_src = open("app/main.py").read()
     main_imports = [ln for ln in _import_lines("app/main.py")
                     if _EXECUTION_PACKAGE.search(ln)]
-    assert main_imports == [
+    # The execution import set is exactly the stack build: one way to build
+    # the order path, no alternative app.execution wiring.
+    execution_imports = [ln for ln in main_imports
+                         if "app.execution." in ln]
+    assert execution_imports == [
         "from app.execution.runtime import build_production_stack"], main_imports
+
+    # Broker imports in main.py are DATA-only (tick ingestion for the paper
+    # intraday trader).  Order-placing broker modules must never be imported
+    # at the application edge, or the single order path is bypassable.
+    for ln in main_imports:
+        assert "app.broker.paper" not in ln and "app.broker.zerodha" not in ln \
+            and "app.broker.base" not in ln, f"direct order path import: {ln}"
 
     # ...and it is a genuine import node, not a string that reads like one.
     imported = {

@@ -49,7 +49,8 @@ class ExecutionOutcome(str, Enum):
     BLOCKED_NOT_RECONCILED = "BLOCKED_NOT_RECONCILED"
     BLOCKED_MODE = "BLOCKED_MODE"
     BLOCKED_DUPLICATE = "BLOCKED_DUPLICATE"
-    AMBIGUOUS = "AMBIGUOUS"                    # broker outcome unknown
+    CANCELLED = "CANCELLED"                  # a risk-reducing cancel reached the broker
+    AMBIGUOUS = "AMBIGUOUS"                  # broker outcome unknown
     ERROR = "ERROR"
 
     @property
@@ -58,6 +59,7 @@ class ExecutionOutcome(str, Enum):
             ExecutionOutcome.SUBMITTED, ExecutionOutcome.FILLED,
             ExecutionOutcome.PARTIALLY_FILLED,
             ExecutionOutcome.REJECTED_BY_BROKER, ExecutionOutcome.AMBIGUOUS,
+            ExecutionOutcome.CANCELLED,
         }
 
 

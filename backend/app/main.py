@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import json
+import asyncio
+import random
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any, AsyncGenerator
 
 import structlog
-from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -22,7 +23,8 @@ from app.core.exceptions import (
     RiskLimitExceededError,
 )
 from app.core.logging import setup_logging
-from app.database.session import create_all_tables, engine
+from app.database.session import engine, migration_status, verify_schema
+from app.realtime import ChannelHub, TickPublisher, websocket_endpoint
 
 logger = structlog.get_logger(__name__)
 
@@ -30,34 +32,54 @@ logger = structlog.get_logger(__name__)
 limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
 
 
-# ── WebSocket connection manager ───────────────────────────────────────────────
-
-class ConnectionManager:
-    def __init__(self) -> None:
-        self.active: list[WebSocket] = []
-
-    async def connect(self, ws: WebSocket) -> None:
-        await ws.accept()
-        self.active.append(ws)
-        logger.info("ws_connected", total=len(self.active))
-
-    def disconnect(self, ws: WebSocket) -> None:
-        self.active.remove(ws)
-        logger.info("ws_disconnected", total=len(self.active))
-
-    async def broadcast(self, data: dict[str, Any]) -> None:
-        payload = json.dumps(data)
-        dead: list[WebSocket] = []
-        for connection in self.active:
-            try:
-                await connection.send_text(payload)
-            except Exception:
-                dead.append(connection)
-        for d in dead:
-            self.active.remove(d)
+# ── Realtime pub/sub hub ───────────────────────────────────────────────────────
+# Channel-based, in-process, allowlisted (see app/realtime/channels.py).
+# Publishers (lifespan events, the tick feed when armed) and the /ws endpoint
+# share this one hub; the frontend subscribes to exactly the channels it
+# renders. Published frames carry {"type": <channel>, ...}.
+hub = ChannelHub()
 
 
-ws_manager = ConnectionManager()
+async def _pub_system(**data: Any) -> None:
+    """Fan-out a lifecycle event on the ``system`` channel; never fatal."""
+    try:
+        await hub.publish("system", data)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+async def _fetch_base_prices(
+    delegate: Any, symbols: list[str], seed: int
+) -> tuple[dict[str, float], bool]:
+    """
+    Previous-close prices to walk the mock feed around.
+
+    Best-effort: ask the underlying data broker for a live last price per
+    symbol; anything it cannot provide falls back to a DETERMINISTIC synthetic
+    price (seed-derived).  ``used_fallback`` is returned so the caller can log
+    loudly that part of the mock session is priced synthetically — the paper
+    book's arithmetic must never pretend those prices were real.
+    """
+    base: dict[str, float] = {}
+    if delegate is not None and hasattr(delegate, "get_quote"):
+        try:
+            quotes = await delegate.get_quote(symbols)
+            for sym in symbols:
+                q = quotes.get(sym) or quotes.get(f"NSE:{sym}") or {}
+                last = float(q.get("last_price") or 0.0)
+                if last > 0:
+                    base[sym] = last
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("base_price_fetch_failed", error=str(exc))
+
+    used_fallback = False
+    rng = random.Random(int(seed))
+    for sym in symbols:
+        if sym in base and base[sym] > 0:
+            continue
+        used_fallback = True
+        base[sym] = round(1000.0 + rng.uniform(-400.0, 900.0), 2)
+    return base, used_fallback
 
 
 # ── Lifespan ───────────────────────────────────────────────────────────────────
@@ -76,8 +98,25 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     )
 
     try:
-        await create_all_tables()
-        log.info("database_ready")
+        mig = await migration_status()
+        if mig["at_head"]:
+            log.info("database_ready", revision=mig["head"])
+        else:
+            log.warning(
+                "migrations_pending",
+                current=mig["current"],
+                head=mig["head"],
+                version_table=mig["version_table_exists"],
+                repair="alembic -c backend/alembic.ini upgrade head",
+            )
+        drift = await verify_schema()
+        if drift:
+            log.error("schema_drift", items=drift)
+        await _pub_system(
+            event="database",
+            at_head=bool(mig["at_head"]),
+            schema_drift_items=len(drift),
+        )
     except Exception as exc:
         log.error("database_init_failed", error=str(exc))
 
@@ -94,8 +133,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await redis.ping()
         await redis.aclose()
         log.info("redis_ready")
+        await _pub_system(event="redis", available=True)
     except Exception as exc:
         log.warning("redis_unavailable", error=str(exc))
+        await _pub_system(event="redis", available=False)
 
     # ── Execution stack + startup reconciliation ──────────────────────────
     #
@@ -148,12 +189,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
         if stack.trading_permitted:
             log.info("execution_stack_ready", trading_permitted=True)
+            await _pub_system(event="execution_stack", trading_permitted=True)
         else:
             log.error(
                 "execution_stack_blocked",
                 trading_permitted=False,
                 reason=stack.startup_reason,
                 detail="Orders will be rejected until reconciliation succeeds.",
+            )
+            await _pub_system(
+                event="execution_stack",
+                trading_permitted=False,
+                reason=stack.startup_reason,
             )
     except Exception as exc:
         # Failing to build the execution stack must NOT leave a half-configured
@@ -166,8 +213,144 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             error=str(exc),
             detail="Trading is unavailable. The API will serve read-only data.",
         )
+        await _pub_system(event="execution_stack", trading_permitted=False, error=str(exc))
+
+    # ── Automated intraday loop (paper, mock feed) ──────────────────────────
+    #
+    # Armed ONLY when a human turned it on AND we are paper AND the tick feed
+    # is the deterministic mock.  Each condition is an independent switch, so
+    # no single mis-set flag can arm the loop by accident:
+    #
+    #   * settings.auto_trade_enabled  — the explicit decision to trade
+    #   * settings.trading_mode        — never arms on a live account
+    #   * settings.tick_mode == "mock" — never arms on a live feed
+    #   * settings.intraday_enabled    — the intraday sleeve must be opted in
+    #
+    # The loop still routes every order through ExecutionService, so nothing
+    # here can override the kill switch, trading gate, mode or eligibility.
+    app.state.auto_trader_stop = None
+    app.state.auto_trader_tasks = []
+    app.state.auto_trader = None
+    app.state.tick_feed = None
+    app.state.tick_aggregator = None
+
+    autotrade_armed = (
+        settings.auto_trade_enabled
+        and settings.intraday_enabled
+        and settings.tick_mode == "mock"
+        and not settings.is_live_trading_enabled
+        and getattr(app.state, "execution_stack", None) is not None
+        and getattr(app.state, "execution_service", None) is not None
+    )
+    if autotrade_armed:
+        try:
+            from app.broker.tickdata import (
+                MockTickFeed,
+                TickBarAggregator,
+                TickQuoteSource,
+            )
+            from app.engine.trader import IntradayAutoTrader
+            from app.strategies.intraday import IntradayStrategy
+
+            stack = app.state.execution_stack
+            service = app.state.execution_service
+            broker = getattr(stack, "broker", None)
+            if broker is None or not hasattr(broker, "_data_broker"):
+                raise RuntimeError(
+                    "broker has no _data_broker to swap for the mock tick source"
+                )
+
+            pipeline = getattr(app.state, "trading_pipeline", None)
+            universe = list(getattr(pipeline, "universe", None) or [])[: settings.trader_universe_size]
+            if not universe:
+                universe = [
+                    "RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK", "SBIN",
+                    "BHARTIARTL", "ITC", "LT", "HINDUNILVR", "AXISBANK", "KOTAKBANK",
+                    "M&M", "SUNPHARMA", "BAJFINANCE", "MARUTI", "TITAN", "ADANIENT",
+                ][: settings.trader_universe_size]
+
+            underlying = getattr(broker, "_data_broker", None)
+            base_prices, used_fallback = await _fetch_base_prices(
+                underlying, universe, settings.tick_seed
+            )
+            if used_fallback:
+                log.warning(
+                    "mock_base_prices_synthetic",
+                    count=sum(1 for s in universe if base_prices.get(s, 0) <= 0),
+                    detail=(
+                        "Part of the mock feed is priced from seeded synthetic "
+                        "base prices (not real closes). Paper-only; labelled in "
+                        "every quote payload."
+                    ),
+                )
+
+            aggregator = TickBarAggregator()
+            quote_source = TickQuoteSource(aggregator, delegate=underlying)
+            # The PaperBroker fills against whatever data source it holds;
+            # pointing it at the aggregator is what makes fills and signals
+            # resolve the SAME minute-bar price.
+            broker._data_broker = quote_source
+
+            stop_event = asyncio.Event()
+            app.state.auto_trader_stop = stop_event
+            app.state.tick_aggregator = aggregator
+            app.state.tick_feed = MockTickFeed(
+                universe, base_prices,
+                seed=settings.tick_seed,
+                interval_ms=settings.tick_interval_ms,
+            )
+
+            strategy = IntradayStrategy(paper_mode=True)
+            trader = IntradayAutoTrader(
+                execution_service=service,
+                strategy=strategy,
+                bar_source=aggregator,
+                broker=broker,
+                universe=universe,
+                cycle_seconds=settings.trader_cycle_seconds,
+                use_broker_stop=settings.intraday_use_broker_stop,
+            )
+            app.state.auto_trader = trader
+
+            # Fan ticks out to the "ticks" channel as they flow into the
+            # aggregator. No-op until a dashboard subscribes; scheduled, never
+            # awaited, so the feed's synchronous path is untouched.
+            tick_publisher = TickPublisher(hub, channel="ticks")
+
+            def _on_tick(symbol: Any, ts: Any, price: float, volume: float) -> None:
+                aggregator.on_tick(symbol, ts, price, volume)
+                tick_publisher(symbol, ts, price, volume)
+
+            app.state.auto_trader_tasks = [
+                asyncio.create_task(app.state.tick_feed.run(stop_event, _on_tick), name="mock-tick-feed"),
+                asyncio.create_task(trader.run(stop_event), name="intraday-auto-trader"),
+            ]
+            log.info(
+                "auto_trader_armed",
+                universe=len(universe),
+                cycle_seconds=settings.trader_cycle_seconds,
+                broker_stop=settings.intraday_use_broker_stop,
+                synthetic_base=used_fallback,
+            )
+            await _pub_system(event="auto_trader", armed=True, universe=len(universe))
+        except Exception as exc:  # noqa: BLE001
+            app.state.auto_trader_stop = None
+            app.state.auto_trader_tasks = []
+            app.state.auto_trader = None
+            app.state.tick_feed = None
+            app.state.tick_aggregator = None
+            log.error(
+                "auto_trader_unavailable",
+                error=str(exc),
+                detail="Intraday loop not armed; the API will serve read-only data.",
+            )
+
+    if not autotrade_armed:
+        await _pub_system(event="auto_trader", armed=False)
 
     log.info("algodollar_started")
+    await _pub_system(event="started")
+
     yield
 
     # Shutdown
@@ -178,6 +361,26 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # not abort the rest — a shutdown path that raises turns a clean stop into
     # a crash and leaves connections open.
     log.info("algodollar_stopping")
+    await _pub_system(event="stopping")
+
+    # Stop the auto-trader and tick feed BEFORE releasing the execution stack:
+    # the loop submits orders through stack.service, and a half-disposed stack
+    # is not a safe place to still be trading.  Signalled cooperatively, then
+    # forcibly cancelled if it does not stop promptly — the SL-M stops at the
+    # broker confine the risk while we finish shutting down.
+    stop_event = getattr(app.state, "auto_trader_stop", None)
+    if stop_event is not None:
+        stop_event.set()
+        tasks = getattr(app.state, "auto_trader_tasks", []) or []
+        if tasks:
+            try:
+                await asyncio.gather(*tasks, return_exceptions=True)
+            except Exception as exc:  # noqa: BLE001
+                log.error("auto_trader_shutdown_error", error=str(exc))
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        log.info("auto_trader_stopped", tasks=len(tasks))
 
     # A distinct name: `stack` is already bound to the ExecutionStack built
     # during startup, and rebinding it to Optional[Any] here is what mypy
@@ -197,6 +400,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         log.error("database_dispose_failed", error=str(exc))
 
     log.info("algodollar_stopped")
+    await _pub_system(event="stopped")
 
 
 # ── Application factory ────────────────────────────────────────────────────────
@@ -213,6 +417,7 @@ def create_app() -> FastAPI:
 
     # Rate limiting
     app.state.limiter = limiter
+    app.state.realtime_hub = hub
     # The ignore below is an upstream typing gap, not a real mismatch.
     # Starlette types every handler as taking `Exception`, while slowapi's
     # handler is declared to take the narrower `RateLimitExceeded`. Starlette
@@ -337,37 +542,11 @@ def create_app() -> FastAPI:
 
     @app.websocket("/ws")
     async def websocket_portfolio(websocket: WebSocket) -> None:
-        await ws_manager.connect(websocket)
-        try:
-            while True:
-                raw = await websocket.receive_text()
-                try:
-                    msg = json.loads(raw)
-                    msg_type = msg.get("type", "ping")
-                except json.JSONDecodeError:
-                    msg_type = "ping"
-
-                if msg_type == "ping":
-                    await websocket.send_text(
-                        json.dumps(
-                            {
-                                "type": "pong",
-                                "timestamp": datetime.now(timezone.utc).isoformat(),
-                            }
-                        )
-                    )
-                elif msg_type == "subscribe":
-                    await websocket.send_text(
-                        json.dumps(
-                            {
-                                "type": "subscribed",
-                                "channels": msg.get("channels", []),
-                                "timestamp": datetime.now(timezone.utc).isoformat(),
-                            }
-                        )
-                    )
-        except WebSocketDisconnect:
-            ws_manager.disconnect(websocket)
+        # Channel-based pub/sub: subscribe to "ticks", "orders", "portfolio",
+        # "risk", "strategy", "audit" or "system", and published frames arrive
+        # tagged {"type": <channel>, ...}. See app/realtime/ws.py for the
+        # client<->server message contract.
+        await websocket_endpoint(websocket, hub)
 
     return app
 

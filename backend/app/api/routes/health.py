@@ -58,7 +58,13 @@ async def _check_redis() -> str:
 
 
 async def _check_broker() -> str:
-    if not settings.kite_api_key or not settings.kite_access_token:
+    if settings.zerodha_mock_mode:
+        # Explicit, opt-in mock of the Zerodha credential surface for local
+        # development. Deliberately a distinct string: "mock" is neither
+        # "connected" (we are not) nor "not_configured" (we deliberately use a
+        # stand-in).
+        return "mock"
+    if not settings.kite_credentials_configured:
         return "not_configured"
     try:
         from kiteconnect import KiteConnect
@@ -113,7 +119,11 @@ async def health_detailed(
         components={
             "database": {"status": db_status, "url_host": settings.database_url.split("@")[-1]},
             "redis": {"status": redis_status},
-            "broker": {"status": broker_status, "api_key_set": bool(settings.kite_api_key)},
+            "broker": {
+                "status": broker_status,
+                "api_key_set": bool(settings.kite_api_key),
+                "zerodha_mock_mode": bool(getattr(settings, "zerodha_mock_mode", False)),
+            },
         },
         config={
             "app_env": settings.app_env,
