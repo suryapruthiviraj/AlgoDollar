@@ -567,6 +567,27 @@ class OrderManager:
             return None
         record.reference_price = ref_price
 
+        # -- 2b. closing-sell awareness -------------------------------- #
+        #
+        # Orders that CANCEL an open position are not new exposure.  A SELL
+        # that removes the daily risk and the single-stock concentration it
+        # already holds must not be re-charged as fresh exposure, or profit
+        # taking / stop exits are blocked for concentrating in the very
+        # instrument they are liquidating (and a full book can never square
+        # off).  The exposure and position-count gates therefore run on the
+        # NET effect; the risk LIMIT still sees the residual fill-gape risk
+        # carried on the order itself.
+        closing_qty = 0
+        if signal.txn_type == TransactionType.SELL:
+            for p in current_positions:
+                if str(p.get("symbol", "")).upper() != signal.symbol.upper():
+                    continue
+                held_qty = int(p.get("quantity", 0) or 0)
+                if held_qty > 0:
+                    closing_qty = min(position_size, held_qty)
+                break
+        closing_value = closing_qty * ref_price
+
         trade_value = position_size * ref_price
         costs = calculate_costs(
             signal.symbol, position_size, ref_price,
@@ -605,6 +626,8 @@ class OrderManager:
             max_qty=self._max_qty,
             max_price=self._max_price,
             max_notional=self._max_notional,
+            net_trade_value=max(0.0, trade_value - closing_value),
+            closing_removes_position=closing_qty > 0,
         )
         if not validation.passed:
             logger.error("Order rejected by safety checks: %s", validation.failed_checks)

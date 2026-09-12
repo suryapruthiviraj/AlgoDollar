@@ -135,3 +135,6 @@ backend/research_data/prices/
 backend/research_data/*.parquet
 !backend/research_data/manifest.json
 !backend/research_data/data_audit.json
+
+# Firecrawl CLI working directory — regenerated scrape/search output, not source.
+.firecrawl/

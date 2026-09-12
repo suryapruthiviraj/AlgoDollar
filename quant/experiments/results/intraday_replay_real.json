@@ -1,0 +1,163 @@
+{
+  "provenance": {
+    "source": "Yahoo Finance, NSE .NS tickers, interval=1m, period=7d",
+    "fetched": "2026-09-06",
+    "window": "2026-08-27 .. 2026-09-04 (7 trading sessions)",
+    "symbols": 8,
+    "survivorship_bias": "not estimable from a single current-week window",
+    "point_in_time": "n/a (single week, today's tickers)",
+    "intraday_history_limit": "Yahoo 1-minute caps at ~8 days per request / ~7 days retained; the eligibility gate requires ~60 sessions of intraday history."
+  },
+  "n_sessions": 7,
+  "n_configs": 5,
+  "edge_survey": {
+    "cells": 56,
+    "candidate_edges": 7585,
+    "max_net_edge": 0.0011,
+    "median_net_edge": -0.0017,
+    "p95_net_edge": -0.0012,
+    "p99_net_edge": -0.0009,
+    "net_edge_exceeds_cost": 0
+  },
+  "grid_results": [
+    {
+      "config": {
+        "min_net_edge": 0.002,
+        "max_positions": 5
+      },
+      "label": "edge=0.002,maxpos=5",
+      "replay_seconds": 116.6,
+      "trades": 0,
+      "trading_days": 0.0,
+      "net_pnl_rupees": 0,
+      "expectancy_per_trade": 0.0,
+      "win_rate_pct": 0.0,
+      "gross_pnl_rupees": 0,
+      "total_costs_rupees": 0,
+      "sessions_with_errors": 0,
+      "daily_returns_pct": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "exit_reasons": {}
+    },
+    {
+      "config": {
+        "min_net_edge": 0.003,
+        "max_positions": 5
+      },
+      "label": "edge=0.003,maxpos=5",
+      "replay_seconds": 186.8,
+      "trades": 0,
+      "trading_days": 0.0,
+      "net_pnl_rupees": 0,
+      "expectancy_per_trade": 0.0,
+      "win_rate_pct": 0.0,
+      "gross_pnl_rupees": 0,
+      "total_costs_rupees": 0,
+      "sessions_with_errors": 0,
+      "daily_returns_pct": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "exit_reasons": {}
+    },
+    {
+      "config": {
+        "min_net_edge": 0.004,
+        "max_positions": 5
+      },
+      "label": "edge=0.004,maxpos=5",
+      "replay_seconds": 167.7,
+      "trades": 0,
+      "trading_days": 0.0,
+      "net_pnl_rupees": 0,
+      "expectancy_per_trade": 0.0,
+      "win_rate_pct": 0.0,
+      "gross_pnl_rupees": 0,
+      "total_costs_rupees": 0,
+      "sessions_with_errors": 0,
+      "daily_returns_pct": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "exit_reasons": {}
+    },
+    {
+      "config": {
+        "min_net_edge": 0.003,
+        "max_positions": 3
+      },
+      "label": "edge=0.003,maxpos=3",
+      "replay_seconds": 224.3,
+      "trades": 0,
+      "trading_days": 0.0,
+      "net_pnl_rupees": 0,
+      "expectancy_per_trade": 0.0,
+      "win_rate_pct": 0.0,
+      "gross_pnl_rupees": 0,
+      "total_costs_rupees": 0,
+      "sessions_with_errors": 0,
+      "daily_returns_pct": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "exit_reasons": {}
+    },
+    {
+      "config": {
+        "min_net_edge": 0.003,
+        "max_positions": 8
+      },
+      "label": "edge=0.003,maxpos=8",
+      "replay_seconds": 151.4,
+      "trades": 0,
+      "trading_days": 0.0,
+      "net_pnl_rupees": 0,
+      "expectancy_per_trade": 0.0,
+      "win_rate_pct": 0.0,
+      "gross_pnl_rupees": 0,
+      "total_costs_rupees": 0,
+      "sessions_with_errors": 0,
+      "daily_returns_pct": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "exit_reasons": {}
+    }
+  ],
+  "deflated_sharpe_baseline": {
+    "value": null,
+    "error": "baseline traded 0 times in the sample; no returns to deflate"
+  },
+  "probability_of_backtest_overfitting": {
+    "value": null,
+    "error": "all configs produced identical (zero-trading) return series"
+  },
+  "verdict": "NO_TRADE: baseline (and every grid config) traded 0 times in the sample. Not a bug and not noise \u2014 the strategy's own edge survey peaks at net edge 0.0011 (vs cost ~0.0018 and the loosest grid threshold 0.002), so it judged nothing tradeable. Zero trades clears costs trivially and produces no PnL; with a single quiet week neither DSR nor PBO can be evaluated. NO strategy claim \u2014 positive or negative \u2014 can be made on this sample; the eligibility gate requires ~60 sessions of intraday history, which this source cannot provide."
+}

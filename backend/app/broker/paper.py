@@ -1082,10 +1082,10 @@ class PaperBroker(BrokerInterface):
             return self._reject(order, RejectReason.INVALID_QUANTITY,
                                 f"quantity must be a positive int, got {qty!r}")
         if order_type in (OrderType.LIMIT, OrderType.SL, OrderType.SL_M) and (
-            not math.isfinite(price) or price <= 0
+            not math.isfinite(effective_price) or effective_price <= 0
         ):
             return self._reject(order, RejectReason.INVALID_PRICE,
-                                f"{order_type.value} needs a positive price, got {price!r}")
+                                f"{order_type.value} needs a positive price, got {effective_price!r}")
 
         # ---- session gates ------------------------------------------- #
         if self._enforce_market_hours and not self.is_market_open(now):

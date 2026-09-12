@@ -48,9 +48,15 @@ shell-db: ## Open a psql session in the running postgres container
 ##@ Database
 
 .PHONY: migrate
-migrate: ## Run Alembic migrations (alembic upgrade head)
+migrate: ## Run Alembic migrations in the backend container (alembic upgrade head)
 	@echo "$(YELLOW)Running database migrations...$(RESET)"
 	$(DC) exec backend alembic upgrade head
+	@echo "$(GREEN)Migrations complete.$(RESET)"
+
+.PHONY: migrate-local
+migrate-local: ## Run Alembic migrations with the local venv (backend/.venv)
+	@echo "$(YELLOW)Running database migrations (local venv)...$(RESET)"
+	cd backend && .venv/bin/alembic -c alembic.ini upgrade head
 	@echo "$(GREEN)Migrations complete.$(RESET)"
 
 .PHONY: seed-paper
@@ -58,6 +64,28 @@ seed-paper: ## Seed the database with paper-trading demo data
 	@echo "$(YELLOW)Seeding paper-trading data...$(RESET)"
 	$(DC) exec backend python -m app.scripts.seed_paper
 	@echo "$(GREEN)Paper data seeded.$(RESET)"
+
+##@ Celery
+
+.PHONY: worker
+worker: ## Run a Celery worker locally (backend/.venv, logs to console)
+	@echo "$(YELLOW)Starting Celery worker (local venv)...$(RESET)"
+	cd backend && .venv/bin/celery -A app.worker worker --loglevel=INFO
+
+.PHONY: worker-beat
+worker-beat: ## Run Celery beat (the scheduler) locally (backend/.venv)
+	@echo "$(YELLOW)Starting Celery beat (local venv)...$(RESET)"
+	cd backend && .venv/bin/celery -A app.worker beat --loglevel=INFO
+
+.PHONY: worker-docker
+worker-docker: ## Start the worker + beat containers (compose)
+	@echo "$(YELLOW)Starting worker and beat containers...$(RESET)"
+	$(DC) up -d worker worker-beat
+	@echo "$(GREEN)Worker + beat started.$(RESET)"
+
+.PHONY: celery-ping
+celery-ping: ## Ask running workers for "pong" (health check)
+	cd backend && .venv/bin/celery -A app.worker inspect ping
 
 ##@ Testing
 

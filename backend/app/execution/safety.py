@@ -241,9 +241,19 @@ class ExecutionSafety:
         logger.debug("Instrument validity %s/%s: OK", symbol, exchange)
 
     async def check_position_limit(
-        self, current_positions: list[dict], max_positions: int
+        self, current_positions: list[dict], max_positions: int,
+        closing_symbol: Optional[str] = None,
     ) -> None:
-        count = len([p for p in current_positions if p.get("quantity", 0) != 0])
+        # A closing order frees its slot before it fills: a full book must be
+        # able to square off its own position.
+        count = len([
+            p for p in current_positions
+            if p.get("quantity", 0) != 0
+            and (
+                closing_symbol is None
+                or str(p.get("symbol", "")).upper() != str(closing_symbol).upper()
+            )
+        ])
         if count >= max_positions:
             raise SafetyCheckError(
                 f"Position limit reached: {count}/{max_positions} open positions."
@@ -256,6 +266,7 @@ class ExecutionSafety:
         trade_value: float,
         total_portfolio: float,
         max_pct: float = 0.10,
+        net_trade_value: Optional[float] = None,
     ) -> None:
         _require_finite(trade_value=trade_value, total_portfolio=total_portfolio)
         if total_portfolio <= 0:
@@ -264,7 +275,15 @@ class ExecutionSafety:
                 f"Portfolio value unknown ({total_portfolio}); cannot evaluate "
                 f"single-stock exposure for {symbol}. Failing closed."
             )
-        pct = trade_value / total_portfolio
+        # ``net_trade_value`` is the exposure ADDED by this order after any
+        # position it closes.  A closing sell adds none, so it can never
+        # "breach" the very limit it relieves.
+        pct_value = (
+            float(net_trade_value)
+            if net_trade_value is not None and net_trade_value >= 0
+            else trade_value
+        )
+        pct = pct_value / total_portfolio
         if pct > max_pct:
             raise SafetyCheckError(
                 f"Single-stock exposure {pct:.1%} > limit {max_pct:.1%} for {symbol}."
@@ -488,6 +507,8 @@ class ExecutionSafety:
         max_qty: Optional[int] = None,
         max_price: Optional[float] = None,
         max_notional: Optional[float] = None,
+        net_trade_value: Optional[float] = None,
+        closing_removes_position: bool = False,
     ) -> OrderValidationResult:
         """
         Run every safety gate and return an :class:`OrderValidationResult`.
@@ -511,9 +532,11 @@ class ExecutionSafety:
             ("capital_availability", self.check_capital_availability(
                 trade_value, available_cash)),
             ("position_limit", self.check_position_limit(
-                current_positions, max_positions)),
+                current_positions, max_positions,
+                closing_symbol=symbol if closing_removes_position else None)),
             ("single_stock_exposure", self.check_single_stock_exposure(
-                symbol, trade_value, total_portfolio, max_single_stock_pct
+                symbol, trade_value, total_portfolio, max_single_stock_pct,
+                net_trade_value=net_trade_value,
             )),
             ("risk_limit", self.check_risk_limit(
                 trade_risk, daily_risk_used, max_daily_risk)),

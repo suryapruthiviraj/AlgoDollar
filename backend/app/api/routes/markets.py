@@ -36,6 +36,9 @@ class MarketOverview(BaseModel):
     breadth_ratio: float
     top_gainers: list[dict]
     top_losers: list[dict]
+    #: "kite" = live Zerodha quotes; "mock" = opt-in mock stands in;
+    #: "fallback_demo" = hardcoded placeholders. Never the real market.
+    data_source: str = "kite"
 
 
 class RegimeInfo(BaseModel):
@@ -45,6 +48,7 @@ class RegimeInfo(BaseModel):
     breadth_ratio: float
     description: str
     timestamp: str
+    data_source: str = "demo"
 
 
 class SectorPerformance(BaseModel):
@@ -69,10 +73,19 @@ class Opportunity(BaseModel):
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _fetch_kite_quote(symbols: list[str]) -> dict:
-    """Return quote dict from Kite or empty dict if not configured."""
+    """Return quote dict from Kite, from mock mode, or empty dict."""
     from app.core.config import settings
 
-    if not settings.kite_api_key or not settings.kite_access_token:
+    if settings.zerodha_mock_mode:
+        try:
+            from app.broker.mock_zerodha import MockKiteClient
+
+            return MockKiteClient().quote(symbols)
+        except Exception as exc:
+            logger.warning("mock_quote_failed", error=str(exc))
+            return {}
+
+    if not settings.kite_credentials_configured:
         return {}
     try:
         from kiteconnect import KiteConnect
@@ -110,7 +123,12 @@ async def market_overview(
 ) -> MarketOverview:
     quotes = _fetch_kite_quote(["NSE:NIFTY 50", "NSE:NIFTY BANK", "NSE:INDIA VIX"])
 
+    source = "kite"
     if quotes:
+        is_mock = all(
+            q.get("source") == "mock" for q in quotes.values()
+        )
+        source = "mock" if is_mock else "kite"
         nf = quotes.get("NSE:NIFTY 50", {})
         bn = quotes.get("NSE:NIFTY BANK", {})
         vix_data = quotes.get("NSE:INDIA VIX", {})
@@ -132,13 +150,16 @@ async def market_overview(
         )
         vix = vix_data.get("last_price", 15.0)
     else:
-        # Fallback mock data when broker not connected
+        # Hardcoded placeholders when there is no live feed and no mock feed.
+        # Labelled explicitly: these numbers are not the real market.
+        source = "fallback_demo"
         nifty = _mock_index("NIFTY 50", 24500.0, 120.5)
         banknifty = _mock_index("BANKNIFTY", 52000.0, -230.0)
         vix = 14.5
 
     return MarketOverview(
         timestamp=datetime.now(timezone.utc).isoformat(),
+        data_source=source,
         nifty=nifty,
         banknifty=banknifty,
         vix=vix,

@@ -323,10 +323,7 @@ class ExecutionService:
         rec.model_version = meta.get("model_version")
 
         try:
-            self._check_kill_switch(rec)
-            self._check_trading_gate(rec)
-            self._check_mode_authorization(rec)
-            self._check_eligibility(rec)
+            self._check_all_gates(rec)
             return await self._submit_to_broker(
                 signal, position_size, rec,
                 exchange=exchange, product=product,
@@ -350,7 +347,155 @@ class ExecutionService:
                 ExecutionOutcome.ERROR, rec, reason=rec.rejection_reason
             )
 
+    async def submit_stop(
+        self,
+        entry_signal: Signal,
+        position_size: int,
+        *,
+        exchange: str = "NSE",
+        product: Optional[str] = None,
+        fill_price: float = 0.0,
+        idempotency_key: Optional[str] = None,
+        portfolio_allocation: Optional[dict[str, Any]] = None,
+        **risk_context: Any,
+    ) -> ExecutionResult:
+        """
+        Attach a broker-side protective SL-M stop to an open position.
+
+        This is NOT an entry or an exit: it is insurance placed AFTER a long
+        (or short) fill so that a dead process still stops the position.  The
+        transaction type is the inverse of the position — a SELL stop guards a
+        long — and the trigger sits below the given ``fill_price`` by the
+        signal's ``stop_loss_pct``.  ``_to_order_intent`` derives the trigger
+        from the ``intent_kind="stop"`` so it can never be confused with a
+        short-entry stop that sits above the price.
+
+        The SL-M goes through the SAME boundary as the entry: kill switch,
+        trading gate, mode, eligibility, OrderManager idempotency and the
+        risk/safety gates all apply.  A stop that cannot be placed without a
+        valid execution state is no stop at all.
+        """
+        rec = self.audit.new_record(self.mode.value)
+        rec.symbol = getattr(entry_signal, "symbol", None)
+        rec.exchange = exchange
+        rec.side = "SELL"
+        rec.quantity = int(position_size) if position_size is not None else None
+        rec.product = product
+        rec.strategy = getattr(entry_signal, "strategy_name", None)
+        rec.signal_edge_score = _f(getattr(entry_signal, "edge_score", None))
+        rec.stop_loss_pct = _f(getattr(entry_signal, "stop_loss_pct", None))
+        rec.target_pct = _f(getattr(entry_signal, "target_pct", None))
+        rec.signal_timestamp = _s(getattr(entry_signal, "timestamp", None))
+        rec.portfolio_allocation = portfolio_allocation or {
+            "intent": "protective_stop",
+            "ref_price": _f(fill_price),
+            "parent_kind": "stop",
+        }
+
+        try:
+            self._check_all_gates(rec)
+            from app.broker.base import OrderType, TransactionType
+
+            return await self._submit_to_broker(
+                entry_signal, position_size, rec,
+                exchange=exchange, product=product,
+                reference_price=fill_price,
+                idempotency_key=idempotency_key,
+                order_type=OrderType.SL_M,
+                txn_type=TransactionType.SELL,
+                intent_kind="stop",
+                **risk_context,
+            )
+        except ExecutionBlocked as blocked:
+            rec.outcome = blocked.outcome.value
+            rec.rejection_reason = blocked.reason
+            self.audit.record(rec)
+            return ExecutionResult(blocked.outcome, rec, reason=blocked.reason)
+        except Exception as exc:
+            # Fail closed: a stop that fails to place must be reported as such,
+            # never silently treated as present.
+            rec.outcome = ExecutionOutcome.ERROR.value
+            rec.error = repr(exc)
+            rec.rejection_reason = f"unexpected error placing protective stop: {exc!r}"
+            self.audit.record(rec)
+            logger.exception("protective stop placement raised; order blocked")
+            return ExecutionResult(
+                ExecutionOutcome.ERROR, rec, reason=rec.rejection_reason
+            )
+
+    async def cancel_order(
+        self,
+        order_ref: str,
+        *,
+        symbol: Optional[str] = None,
+        strategy: Optional[str] = None,
+    ) -> ExecutionResult:
+        """
+        Cancel an open order previously submitted through this boundary.
+
+        The auto-trader uses this to remove a protective SL-M stop the moment
+        it is about to exit manually — the stop must not linger, or a filled
+        stop would turn into an unintended new short.  Cancelling is itself
+        gated by the kill switch and trading gate: if the gate is closed we
+        KEEP the protective stops (risk-reducing) rather than removing them and
+        leaving a position exposed to a gate that is refusing new orders.
+        """
+        rec = self.audit.new_record(self.mode.value)
+        rec.symbol = symbol
+        rec.strategy = strategy
+        rec.portfolio_allocation = {"intent": "cancel_protective_stop"}
+
+        try:
+            self._check_kill_switch(rec)
+            self._check_trading_gate(rec)
+            cancelled = bool(await self.order_manager.cancel_order(order_ref, self.broker))
+        except ExecutionBlocked as blocked:
+            rec.outcome = blocked.outcome.value
+            rec.rejection_reason = blocked.reason
+            self.audit.record(rec)
+            return ExecutionResult(blocked.outcome, rec, reason=blocked.reason)
+        except Exception as exc:
+            rec.outcome = ExecutionOutcome.ERROR.value
+            rec.error = repr(exc)
+            rec.rejection_reason = f"unexpected error cancelling order: {exc!r}"
+            self.audit.record(rec)
+            return ExecutionResult(ExecutionOutcome.ERROR, rec, reason=rec.rejection_reason)
+
+        rec.broker_order_id = order_ref
+        if cancelled:
+            rec.outcome = ExecutionOutcome.CANCELLED.value
+            rec.final_state = "CANCELLED"
+            self.audit.record(rec)
+            return ExecutionResult(
+                ExecutionOutcome.CANCELLED, rec, broker_order_id=order_ref
+            )
+
+        # OrderManager refused the cancel because the order is already terminal
+        # (filled, cancelled, rejected) or unknown.  Both are benign for a
+        # protective stop: "already filled" means the stop did its job.
+        rec.outcome = ExecutionOutcome.SUBMITTED.value
+        rec.final_state = "ALREADY_TERMINAL"
+        rec.rejection_reason = (
+            "cancel returned False: order already filled/cancelled/unknown at broker"
+        )
+        self.audit.record(rec)
+        return ExecutionResult(
+            ExecutionOutcome.SUBMITTED, rec, broker_order_id=order_ref,
+            reason=rec.rejection_reason,
+        )
+
     # -- individual gates ------------------------------------------------
+
+    def _check_all_gates(self, rec: ExecutionAuditRecord) -> None:
+        """
+        The four boundary gates, in the strictest-first order (see module
+        docstring).  Shared by the entry, exit, protective-stop and cancel
+        paths so that no order-taking route can skip one.
+        """
+        self._check_kill_switch(rec)
+        self._check_trading_gate(rec)
+        self._check_mode_authorization(rec)
+        self._check_eligibility(rec)
 
     def _check_kill_switch(self, rec: ExecutionAuditRecord) -> None:
         active, reason = self.kill_switch.is_active()
@@ -493,6 +638,9 @@ class ExecutionService:
         quantity: int,
         reference_price: float = 0.0,
         idempotency_key: Optional[str] = None,
+        order_type: Optional[Any] = None,
+        txn_type: Optional[Any] = None,
+        intent_kind: Optional[str] = None,
     ):
         """
         Translate an ALPHA signal into an ORDER intent.
@@ -514,13 +662,27 @@ class ExecutionService:
           absolute trigger. This is the risk anchor the position sizer used, so
           it must be carried through rather than recomputed downstream — and
           without it, `OrderManager` treats the whole notional as at risk.
+
+        The `order_type` / `txn_type` / `intent_kind` overrides exist for ONE
+        caller only: the protective SL-M stop that guards an already-open
+        intraday position (`ExecutionService.submit_stop`). A stop SELL guards
+        a LONG (trigger below the entry fill); a stop BUY guards a SHORT
+        (trigger above). That is the inverse of an entry intent, where the SELL
+        leg is a short ENTRY and its stop sits above. Mixing the two up is how
+        a protective stop becomes an instant fill, so the rule is keyed off the
+        intent, not the transaction type.
         """
         from app.broker.base import OrderType, Product, TransactionType
         from app.execution.lifecycle import deterministic_client_order_id
         from app.execution.order_manager import Signal as OrderSignal
 
         direction = str(getattr(getattr(signal, "direction", None), "value", "")).upper()
-        txn = TransactionType.SELL if direction in {"SHORT", "EXIT"} else TransactionType.BUY
+        txn = txn_type
+        if txn is None:
+            txn = (
+                TransactionType.SELL if direction in {"SHORT", "EXIT"}
+                else TransactionType.BUY
+            )
 
         strategy = (getattr(signal, "strategy_name", "") or "").lower()
         if product:
@@ -528,19 +690,32 @@ class ExecutionService:
         else:
             prod = Product.MIS if strategy == "intraday" else Product.CNC
 
+        order_type = order_type or OrderType.MARKET
+
         # Absolute stop from the fractional stop the sizer used. Zero means
         # "no broker-side stop", which OrderManager treats as full-notional
         # risk — conservative, and the correct default when unknown.
         stop_pct = _f(getattr(signal, "stop_loss_pct", None)) or 0.0
         stop_price = 0.0
         if reference_price > 0 and stop_pct > 0:
-            stop_price = (
-                reference_price * (1 - stop_pct) if txn is TransactionType.BUY
-                else reference_price * (1 + stop_pct)
-            )
+            if intent_kind == "stop":
+                # Protective stop: SELL guards a long (trigger below entry),
+                # BUY guards a short (trigger above entry).
+                stop_price = (
+                    reference_price * (1 - stop_pct)
+                    if txn is TransactionType.SELL
+                    else reference_price * (1 + stop_pct)
+                )
+            else:
+                stop_price = (
+                    reference_price * (1 - stop_pct)
+                    if txn is TransactionType.BUY
+                    else reference_price * (1 + stop_pct)
+                )
 
         rec.product = prod.value
         rec.side = txn.value
+        rec.order_type = order_type.value
 
         # ── Idempotency key ────────────────────────────────────────────────
         #
@@ -574,13 +749,16 @@ class ExecutionService:
             symbol=signal.symbol,
             exchange=exchange,
             txn_type=txn,
-            order_type=OrderType.MARKET,
+            order_type=order_type,
             product=prod,
             price=float(reference_price or 0.0),
             stop_price=float(stop_price),
             strategy=getattr(signal, "strategy_name", "") or "",
             client_order_id=client_order_id,
-            intent_kind="exit" if direction == "EXIT" else "entry",
+            intent_kind=(
+                intent_kind if intent_kind is not None
+                else ("exit" if direction == "EXIT" else "entry")
+            ),
         )
 
     async def _submit_to_broker(
@@ -593,6 +771,9 @@ class ExecutionService:
         product: Optional[str] = None,
         reference_price: float = 0.0,
         idempotency_key: Optional[str] = None,
+        order_type: Optional[Any] = None,
+        txn_type: Optional[Any] = None,
+        intent_kind: Optional[str] = None,
         **risk_context: Any,
     ) -> ExecutionResult:
         """
@@ -608,6 +789,9 @@ class ExecutionService:
                 quantity=int(position_size),
                 reference_price=reference_price,
                 idempotency_key=idempotency_key,
+                order_type=order_type,
+                txn_type=txn_type,
+                intent_kind=intent_kind,
             )
 
             # Claim the idempotency key BEFORE the broker is called. If this

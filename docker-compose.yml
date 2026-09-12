@@ -127,6 +127,7 @@ services:
       KITE_API_SECRET: ${KITE_API_SECRET:-}
       KITE_ACCESS_TOKEN: ${KITE_ACCESS_TOKEN:-}
       KITE_REDIRECT_URL: ${KITE_REDIRECT_URL:-http://localhost:3000/kite/callback}
+      KITE_STATIC_IP_ENABLED: ${KITE_STATIC_IP_ENABLED:-false}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     ports:
       # Loopback by default. Set BACKEND_BIND=0.0.0.0 only behind a reverse
@@ -155,39 +156,74 @@ services:
     stop_grace_period: 30s
 
   # ── Celery Worker ──────────────────────────────────────────────────────────
-  # DISABLED — this service cannot start as written.
-  #
-  #   * Its command was `python -m app.worker`, but backend/app/worker.py does
-  #     not exist anywhere in the repository.
-  #   * There is no Celery application defined either: `grep -rn "Celery("
-  #     backend/app` returns nothing, even though celery[redis] is installed.
-  #
-  # With `restart: unless-stopped` it would crash-loop indefinitely, burning CPU
-  # and filling the logs while appearing to be a running part of the stack.
-  # Re-enable once a worker entrypoint exists, and give it a healthcheck
-  # (e.g. `celery -A app.worker inspect ping`) so failures are visible.
-  #
-  # worker:
-  #   build:
-  #     context: ./backend
-  #     dockerfile: Dockerfile
-  #   image: algodollar/backend:local
-  #   container_name: algodollar-worker
-  #   restart: unless-stopped
-  #   security_opt: ["no-new-privileges:true"]
-  #   cap_drop: [ALL]
-  #   command: ["celery", "-A", "app.worker", "worker", "--loglevel=INFO"]
-  #   environment:
-  #     DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-algodollar}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-algodollar}
-  #     REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
-  #     TRADING_MODE: ${TRADING_MODE:-paper}
-  #     SECRET_KEY: ${SECRET_KEY}
-  #   volumes:
-  #     - backend-logs:/app/logs
-  #   depends_on:
-  #     postgres: {condition: service_healthy}
-  #     redis:    {condition: service_healthy}
-  #   networks: [algodollar-net]
+  # Runs app/worker.py (backend), which now exists: a Celery app with the
+  # daily-P&L recap and Kite session-health beats. This service executes
+  # queued tasks; the separate `worker-beat` service owns the schedule. Both
+  # share the same image and the same explicit environment allowlist as the
+  # API (no `env_file: .env` injection).
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: algodollar/backend:local
+    container_name: algodollar-worker
+    restart: unless-stopped
+    <<: *defaults
+    cap_drop:
+      - ALL
+    command: ["celery", "-A", "app.worker", "worker", "--loglevel=INFO"]
+    environment: &worker-env
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-algodollar}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-algodollar}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      TRADING_MODE: ${TRADING_MODE:-paper}
+      APP_ENV: ${APP_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set in .env (>=32 chars)}
+      KITE_API_KEY: ${KITE_API_KEY:-}
+      KITE_API_SECRET: ${KITE_API_SECRET:-}
+      KITE_ACCESS_TOKEN: ${KITE_ACCESS_TOKEN:-}
+      KITE_STATIC_IP_ENABLED: ${KITE_STATIC_IP_ENABLED:-false}
+    volumes:
+      - backend-logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - algodollar-net
+    healthcheck:
+      # A pidbox ping: non-zero unless a worker answers "pong" on the wire.
+      test: ["CMD-SHELL", "celery -A app.worker inspect ping -t 10 | grep -q pong"]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 30s
+    stop_grace_period: 30s
+
+  # ── Celery Beat (the scheduler half of the worker) ────────────────────────
+  # A separate container so beat doesn't restart when workers restart, and so
+  # exactly one scheduler exists (two beats would double-fire every task).
+  # Beat only sends task messages — it never executes them.
+  worker-beat:
+    image: algodollar/backend:local
+    container_name: algodollar-worker-beat
+    restart: unless-stopped
+    <<: *defaults
+    cap_drop:
+      - ALL
+    command: ["celery", "-A", "app.worker", "beat", "--loglevel=INFO"]
+    environment: *worker-env
+    volumes:
+      - backend-logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - algodollar-net
+    stop_grace_period: 30s
 
   # ── Frontend (Next.js) ─────────────────────────────────────────────────────
   frontend:
